@@ -1,0 +1,15 @@
+{
+  "token": {
+    "payload": {
+      "token_id": "sub_082a145b-e98f-48b6-9305-7938664da7e5",
+      "user_pubkey": "63f013dc88ab98befb662f278d938493bd0e44cde71afdbc5a69677325b498ad",
+      "subscription_type": "monthly",
+      "tier": "full",
+      "issued_at": 1764546375,
+      "expires_at": 1767138375,
+      "nonce": "23cf2acf-798b-484d-bebe-a7ef776dee12",
+      "issuer_pubkey": "63f013dc88ab98befb662f278d938493bd0e44cde71afdbc5a69677325b498ad"
+    },
+    "signature": "64af51794535a3f6a3cc3ef90f36f7e5e5e98de156bf756337c9e2fbed6d182ae240dc47332f27fc1464d7ea8ce94def6fb0dada37c04ead10e94f2af71f2ce9"
+  }
+}

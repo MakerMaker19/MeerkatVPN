@@ -1,0 +1,17 @@
+package vpn
+
+type SubscriptionPayload struct {
+    TokenID          string `json:"token_id"`
+    UserPubKey       string `json:"user_pubkey"`
+    SubscriptionType string `json:"subscription_type"` // "weekly", "monthly", etc.
+    Tier             string `json:"tier"`              // "full", etc.
+    IssuedAt         int64  `json:"issued_at"`
+    ExpiresAt        int64  `json:"expires_at"`
+    Nonce            string `json:"nonce"`
+    IssuerPubKey     string `json:"issuer_pubkey"` // pool pubkey (hex)
+}
+
+type SubscriptionToken struct {
+    Payload   SubscriptionPayload `json:"payload"`
+    Signature string              `json:"signature"` // hex schnorr signature
+}
