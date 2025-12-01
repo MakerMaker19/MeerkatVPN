@@ -8,11 +8,15 @@ import (
 	"time"
 
 	"github.com/MakerMaker19/meerkatvpn/pkg/vpn"
+	"github.com/MakerMaker19/meerkatvpn/pkg/wg"
+
 )
 
 type sessionCreateRequest struct {
-	Token vpn.SubscriptionToken `json:"token"`
+	Token          vpn.SubscriptionToken `json:"token"`
+	ClientWGPubKey string               `json:"client_wg_pubkey,omitempty"`
 }
+
 
 type sessionCreateResponse struct {
 	Status  string `json:"status"`
@@ -33,6 +37,12 @@ func main() {
 	}
 
 	allowedPool := os.Getenv("MEERKAT_NODE_ALLOWED_POOL_PUBKEY") // optional hex pubkey filter
+
+	wgMgr, err := wg.NewManagerFromEnv()
+	if err != nil {
+		log.Printf("warning: failed to init WireGuard manager: %v (will still accept sessions with static IP)\n", err)
+		wgMgr = nil
+	}
 
 	http.HandleFunc("/session/create", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -70,33 +80,45 @@ func main() {
 			return
 		}
 
-		// TODO: here we would allocate a WireGuard peer, IP, etc.
+		// Allocate a WireGuard peer, IP, etc.
 		log.Printf("session create: accepted token %s for user %s\n",
 			tok.Payload.TokenID, tok.Payload.UserPubKey)
 
-		// Read WG-related env vars or use some simple defaults.
-		serverPub := os.Getenv("MEERKAT_NODE_WG_PUBKEY")
-		if serverPub == "" {
-			// placeholder / fake
-			serverPub = "SERVER_WG_PUBKEY_PLACEHOLDER"
-		}
-		endpoint := os.Getenv("MEERKAT_NODE_WG_ENDPOINT")
-		if endpoint == "" {
-			endpoint = "127.0.0.1:51820"
-		}
-		clientIP := "10.8.0.2/32" // later: allocate dynamically
-		allowed := "0.0.0.0/0, ::/0"
-		dns := []string{"1.1.1.1"}
+        // Decide client IP:
+        clientIP := "10.8.0.2/32" // default fallback
+        if wgMgr != nil && req.ClientWGPubKey != "" {
+            if ip, err := wgMgr.AllocatePeer(req.ClientWGPubKey); err != nil {
+                log.Println("wg allocate peer error:", err)
+            } else {
+                clientIP = ip
+                if err := wgMgr.ApplyPeer(req.ClientWGPubKey, clientIP); err != nil {
+                    log.Println("wg apply peer error:", err)
+                }
+            }
+        }
 
-		writeJSON(w, http.StatusOK, sessionCreateResponse{
-			Status:      "ok",
-			Message:     "session accepted (WireGuard config TBD)",
-			ServerPubKey: serverPub,
-			Endpoint:     endpoint,
-			ClientIP:     clientIP,
-			AllowedIPs:   allowed,
-			DNS:          dns,
-		})
+        // Read WG-related env vars or use some simple defaults.
+        serverPub := os.Getenv("MEERKAT_NODE_WG_PUBKEY")
+        if serverPub == "" {
+            // placeholder / fake
+            serverPub = "SERVER_WG_PUBKEY_PLACEHOLDER"
+        }
+        endpoint := os.Getenv("MEERKAT_NODE_WG_ENDPOINT")
+        if endpoint == "" {
+            endpoint = "127.0.0.1:51820"
+        }
+        allowed := "0.0.0.0/0, ::/0"
+        dns := []string{"1.1.1.1"}
+
+        writeJSON(w, http.StatusOK, sessionCreateResponse{
+            Status:       "ok",
+            Message:      "session accepted (WireGuard config TBD)",
+            ServerPubKey: serverPub,
+            Endpoint:     endpoint,
+            ClientIP:     clientIP,
+            AllowedIPs:   allowed,
+            DNS:          dns,
+        })
 
 	})
 

@@ -107,12 +107,15 @@ func cmdConnect() error {
 	}
 	log.Printf("Generated WireGuard public key: %s\n", wgKeys.Public)
 
-	// Build request (for now, just the token)
+	// Build request 
 	reqBody := struct {
-		Token vpn.SubscriptionToken `json:"token"`
+		Token          vpn.SubscriptionToken `json:"token"`
+		ClientWGPubKey string               `json:"client_wg_pubkey"`
 	}{
-		Token: *tok,
+		Token:          *tok,
+		ClientWGPubKey: wgKeys.Public,
 	}
+
 
 	b, err := json.Marshal(reqBody)
 	if err != nil {
