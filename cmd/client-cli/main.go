@@ -80,7 +80,6 @@ func cmdListTokens() error {
 }
 
 func cmdConnect() error {
-	// Where is the node?
 	nodeURL := os.Getenv("MEERKAT_NODE_URL")
 	if nodeURL == "" {
 		nodeURL = "http://localhost:9090"
@@ -91,7 +90,6 @@ func cmdConnect() error {
 		return fmt.Errorf("MEERKAT_CLIENT_POOL_PUBKEY not set")
 	}
 
-	// Load tokens and pick the latest valid one from this pool.
 	ts, err := client.LoadTokenStore()
 	if err != nil {
 		return fmt.Errorf("load token store: %w", err)
@@ -102,7 +100,14 @@ func cmdConnect() error {
 		return fmt.Errorf("no valid tokens: %w", err)
 	}
 
-	// Build session create request.
+	// Generate WG keypair
+	wgKeys, err := client.GenerateWGKeypair()
+	if err != nil {
+		return fmt.Errorf("generate WG keypair: %w", err)
+	}
+	log.Printf("Generated WireGuard public key: %s\n", wgKeys.Public)
+
+	// Build request (for now, just the token)
 	reqBody := struct {
 		Token vpn.SubscriptionToken `json:"token"`
 	}{
@@ -114,7 +119,6 @@ func cmdConnect() error {
 		return fmt.Errorf("marshal request: %w", err)
 	}
 
-	// POST to node.
 	url := nodeURL + "/session/create"
 	log.Printf("Connecting to node at %s with token %s\n", url, tok.Payload.TokenID)
 
@@ -125,8 +129,13 @@ func cmdConnect() error {
 	defer resp.Body.Close()
 
 	var sr struct {
-		Status  string `json:"status"`
-		Message string `json:"message"`
+		Status       string   `json:"status"`
+		Message      string   `json:"message"`
+		ServerPubKey string   `json:"server_pubkey"`
+		Endpoint     string   `json:"endpoint"`
+		ClientIP     string   `json:"client_ip"`
+		AllowedIPs   string   `json:"allowed_ips"`
+		DNS          []string `json:"dns"`
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&sr); err != nil {
@@ -137,10 +146,44 @@ func cmdConnect() error {
 		return fmt.Errorf("node error: %s (%s)", sr.Status, sr.Message)
 	}
 
+	// 6) Build a WireGuard config using our private key and node's parameters.
+	if sr.ClientIP == "" {
+		return fmt.Errorf("node did not provide client_ip")
+	}
+	if sr.ServerPubKey == "" {
+		return fmt.Errorf("node did not provide server_pubkey")
+	}
+	if sr.Endpoint == "" {
+		return fmt.Errorf("node did not provide endpoint")
+	}
+
+	cfg := client.BuildWGConfig(client.WGConfigParams{
+		PrivateKey: wgKeys.Private,
+		Address:    sr.ClientIP,
+		DNS:        sr.DNS,
+		ServerPub:  sr.ServerPubKey,
+		Endpoint:   sr.Endpoint,
+		AllowedIPs: sr.AllowedIPs,
+		Keepalive:  25,
+	})
+
+	path, err := client.DefaultWGConfigPath()
+	if err != nil {
+		return fmt.Errorf("determine WG config path: %w", err)
+	}
+
+	if err := client.WriteWGConfig(path, cfg); err != nil {
+		return fmt.Errorf("write WG config: %w", err)
+	}
+
 	fmt.Println("Node accepted session:")
 	fmt.Println("  status :", sr.Status)
 	fmt.Println("  message:", sr.Message)
-	fmt.Println("  (WireGuard config TBD)")
+	fmt.Println()
+	fmt.Println("WireGuard config written to:")
+	fmt.Println(" ", path)
+	fmt.Println()
+	fmt.Println("You can inspect it and later use it with a WireGuard client.")
 
 	return nil
 }

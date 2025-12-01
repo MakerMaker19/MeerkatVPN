@@ -17,7 +17,13 @@ type sessionCreateRequest struct {
 type sessionCreateResponse struct {
 	Status  string `json:"status"`
 	Message string `json:"message,omitempty"`
-	// TODO: add WireGuard config fields here later.
+
+	// WireGuard parameters for the client to build a config.
+	ServerPubKey string   `json:"server_pubkey,omitempty"`
+	Endpoint     string   `json:"endpoint,omitempty"`
+	ClientIP     string   `json:"client_ip,omitempty"`
+	AllowedIPs   string   `json:"allowed_ips,omitempty"`
+	DNS          []string `json:"dns,omitempty"`
 }
 
 func main() {
@@ -68,10 +74,30 @@ func main() {
 		log.Printf("session create: accepted token %s for user %s\n",
 			tok.Payload.TokenID, tok.Payload.UserPubKey)
 
+		// Read WG-related env vars or use some simple defaults.
+		serverPub := os.Getenv("MEERKAT_NODE_WG_PUBKEY")
+		if serverPub == "" {
+			// placeholder / fake
+			serverPub = "SERVER_WG_PUBKEY_PLACEHOLDER"
+		}
+		endpoint := os.Getenv("MEERKAT_NODE_WG_ENDPOINT")
+		if endpoint == "" {
+			endpoint = "127.0.0.1:51820"
+		}
+		clientIP := "10.8.0.2/32" // later: allocate dynamically
+		allowed := "0.0.0.0/0, ::/0"
+		dns := []string{"1.1.1.1"}
+
 		writeJSON(w, http.StatusOK, sessionCreateResponse{
-			Status:  "ok",
-			Message: "session accepted (WireGuard config TBD)",
+			Status:      "ok",
+			Message:     "session accepted (WireGuard config TBD)",
+			ServerPubKey: serverPub,
+			Endpoint:     endpoint,
+			ClientIP:     clientIP,
+			AllowedIPs:   allowed,
+			DNS:          dns,
 		})
+
 	})
 
 	log.Printf("noded: listening on %s\n", addr)
