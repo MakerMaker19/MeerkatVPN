@@ -7,7 +7,7 @@ import (
     "encoding/json"
     "fmt"
     "io"
-    "io/fs"
+	"io/fs"
     "log"
     "net/http"
     "os"
@@ -17,8 +17,10 @@ import (
     "time"
 
     "github.com/MakerMaker19/meerkatvpn/pkg/client"
+    "github.com/MakerMaker19/meerkatvpn/pkg/discovery"
     "github.com/MakerMaker19/meerkatvpn/pkg/vpn"
 )
+
 
 func main() {
 	if len(os.Args) < 2 {
@@ -199,24 +201,45 @@ func copyOVPNToOpenVPNConfigDir(srcPath string) {
 // - If backend == "wireguard": builds and writes a WG config (existing behavior)
 // - If backend == "openvpn": expects ovpn_profile in the response and writes meerkat.ovpn
 func cmdConnect() error {
-    nodeURL := os.Getenv("MEERKAT_NODE_URL")
-    if nodeURL == "" {
-        nodeURL = "http://localhost:9090"
-    }
+	ctx := context.Background()
 
-    backend := promptBackend()
-    log.Printf("Using backend=%s\n", backend)
+	// Backend selection (OpenVPN vs WireGuard)
+	backend := promptBackend()
+	log.Printf("Using backend=%s\n", backend)
 
-    poolPub := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
-    if poolPub == "" {
-        return fmt.Errorf("MEERKAT_CLIENT_POOL_PUBKEY not set")
-    }
+	poolPub := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
+	if poolPub == "" {
+		return fmt.Errorf("MEERKAT_CLIENT_POOL_PUBKEY not set")
+	}
 
+	// Node selection
+	nodeURL := os.Getenv("MEERKAT_NODE_URL")
+	if nodeURL != "" {
+		log.Printf("Using node URL from MEERKAT_NODE_URL=%s\n", nodeURL)
+	} else {
+		preferredRegion := os.Getenv("MEERKAT_PREFERRED_REGION")
+		if preferredRegion == "" {
+			preferredRegion = "auto"
+		}
+
+		node, err := discovery.FindNode(ctx, poolPub, preferredRegion, backend)
+		if err != nil {
+			return fmt.Errorf("no suitable node found via discovery: %w", err)
+		}
+
+		nodeURL = node.APIURL
+
+		log.Printf("Selected node %s (%s) via discovery\n",
+			node.ID, node.Region)
+	}
+
+	// - load token store
 	ts, err := client.LoadTokenStore()
 	if err != nil {
 		return fmt.Errorf("load token store: %w", err)
 	}
 
+	// - pick latest valid token
 	tok, err := ts.LatestValid(poolPub, time.Now())
 	if err != nil {
 		return fmt.Errorf("no valid tokens: %w", err)
