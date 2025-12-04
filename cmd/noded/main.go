@@ -9,14 +9,13 @@ import (
 
 	"github.com/MakerMaker19/meerkatvpn/pkg/vpn"
 	"github.com/MakerMaker19/meerkatvpn/pkg/wg"
-
 )
 
 type sessionCreateRequest struct {
 	Token          vpn.SubscriptionToken `json:"token"`
 	ClientWGPubKey string               `json:"client_wg_pubkey,omitempty"`
+	Backend        string               `json:"backend,omitempty"` // "wireguard" or "openvpn"
 }
-
 
 type sessionCreateResponse struct {
 	Status  string `json:"status"`
@@ -28,6 +27,9 @@ type sessionCreateResponse struct {
 	ClientIP     string   `json:"client_ip,omitempty"`
 	AllowedIPs   string   `json:"allowed_ips,omitempty"`
 	DNS          []string `json:"dns,omitempty"`
+
+	// OpenVPN profile text (full .ovpn file) for OpenVPN backend.
+	OVPNProfile string `json:"ovpn_profile,omitempty"`
 }
 
 func main() {
@@ -36,7 +38,8 @@ func main() {
 		addr = ":9090"
 	}
 
-	allowedPool := os.Getenv("MEERKAT_NODE_ALLOWED_POOL_PUBKEY") // optional hex pubkey filter
+	// Optional: restrict which pool/issuer pubkey is allowed.
+	allowedPool := os.Getenv("MEERKAT_NODE_ALLOWED_POOL_PUBKEY")
 
 	wgMgr, err := wg.NewManagerFromEnv()
 	if err != nil {
@@ -59,7 +62,7 @@ func main() {
 
 		tok := req.Token
 
-		// Optional issuer pubkey filter.
+		// Optional issuer/pubkey filter.
 		if allowedPool != "" && tok.Payload.IssuerPubKey != allowedPool {
 			log.Printf("session create: issuer mismatch (got %s, expected %s)\n",
 				tok.Payload.IssuerPubKey, allowedPool)
@@ -80,46 +83,78 @@ func main() {
 			return
 		}
 
-		// Allocate a WireGuard peer, IP, etc.
-		log.Printf("session create: accepted token %s for user %s\n",
-			tok.Payload.TokenID, tok.Payload.UserPubKey)
+		// Decide which backend to use.
+		backend := req.Backend
+		if backend == "" {
+			backend = "wireguard" // default to existing behavior
+		}
 
-        // Decide client IP:
-        clientIP := "10.8.0.2/32" // default fallback
-        if wgMgr != nil && req.ClientWGPubKey != "" {
-            if ip, err := wgMgr.AllocatePeer(req.ClientWGPubKey); err != nil {
-                log.Println("wg allocate peer error:", err)
-            } else {
-                clientIP = ip
-                if err := wgMgr.ApplyPeer(req.ClientWGPubKey, clientIP); err != nil {
-                    log.Println("wg apply peer error:", err)
-                }
-            }
-        }
+		log.Printf("session create: accepted token %s for user %s (backend=%s)\n",
+			tok.Payload.TokenID, tok.Payload.UserPubKey, backend)
 
-        // Read WG-related env vars or use some simple defaults.
-        serverPub := os.Getenv("MEERKAT_NODE_WG_PUBKEY")
-        if serverPub == "" {
-            // placeholder / fake
-            serverPub = "SERVER_WG_PUBKEY_PLACEHOLDER"
-        }
-        endpoint := os.Getenv("MEERKAT_NODE_WG_ENDPOINT")
-        if endpoint == "" {
-            endpoint = "127.0.0.1:51820"
-        }
-        allowed := "0.0.0.0/0, ::/0"
-        dns := []string{"1.1.1.1"}
+		// === Backend: OpenVPN ==========================================
+		if backend == "openvpn" {
+			// For now: read a static .ovpn profile from disk and return it.
+			ovpnPath := os.Getenv("MEERKAT_NODE_OVPN_PROFILE_PATH")
+			if ovpnPath == "" {
+				ovpnPath = "/etc/openvpn/meerkat-client.ovpn" // adjust this to wherever your .ovpn lives
+			}
 
-        writeJSON(w, http.StatusOK, sessionCreateResponse{
-            Status:       "ok",
-            Message:      "session accepted (WireGuard config TBD)",
-            ServerPubKey: serverPub,
-            Endpoint:     endpoint,
-            ClientIP:     clientIP,
-            AllowedIPs:   allowed,
-            DNS:          dns,
-        })
+			profileBytes, err := os.ReadFile(ovpnPath)
+			if err != nil {
+				log.Printf("session create: failed to read OpenVPN profile from %s: %v\n", ovpnPath, err)
+				writeJSON(w, http.StatusInternalServerError, sessionCreateResponse{
+					Status:  "error",
+					Message: "failed to load OpenVPN profile on node",
+				})
+				return
+			}
 
+			writeJSON(w, http.StatusOK, sessionCreateResponse{
+				Status:      "ok",
+				Message:     "session accepted (OpenVPN profile)",
+				OVPNProfile: string(profileBytes),
+			})
+			return
+		}
+
+		// === Backend: WireGuard (original behavior) ====================
+
+		// Decide client IP:
+		clientIP := "10.8.0.2/32" // default fallback
+		if wgMgr != nil && req.ClientWGPubKey != "" {
+			if ip, err := wgMgr.AllocatePeer(req.ClientWGPubKey); err != nil {
+				log.Println("wg allocate peer error:", err)
+			} else {
+				clientIP = ip
+				if err := wgMgr.ApplyPeer(req.ClientWGPubKey, clientIP); err != nil {
+					log.Println("wg apply peer error:", err)
+				}
+			}
+		}
+
+		// Read WG-related env vars or use some simple defaults.
+		serverPub := os.Getenv("MEERKAT_NODE_WG_PUBKEY")
+		if serverPub == "" {
+			// placeholder / fake
+			serverPub = "SERVER_WG_PUBKEY_PLACEHOLDER"
+		}
+		endpoint := os.Getenv("MEERKAT_NODE_WG_ENDPOINT")
+		if endpoint == "" {
+			endpoint = "127.0.0.1:51820"
+		}
+		allowed := "0.0.0.0/0, ::/0"
+		dns := []string{"1.1.1.1"}
+
+		writeJSON(w, http.StatusOK, sessionCreateResponse{
+			Status:       "ok",
+			Message:      "session accepted (WireGuard config)",
+			ServerPubKey: serverPub,
+			Endpoint:     endpoint,
+			ClientIP:     clientIP,
+			AllowedIPs:   allowed,
+			DNS:          dns,
+		})
 	})
 
 	log.Printf("noded: listening on %s\n", addr)
