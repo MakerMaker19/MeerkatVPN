@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/MakerMaker19/meerkatvpn/pkg/client"
@@ -81,26 +83,52 @@ func cmdListTokens() error {
 	return nil
 }
 
+func promptBackend() string {
+    // If env var is set, respect it and don't prompt.
+    if env := os.Getenv("MEERKAT_TUNNEL_BACKEND"); env != "" {
+        log.Printf("MEERKAT_TUNNEL_BACKEND=%s (no prompt)\n", env)
+        return strings.ToLower(env)
+    }
+
+    reader := bufio.NewReader(os.Stdin)
+
+    fmt.Println("Select tunnel backend:")
+    fmt.Println("  1) OpenVPN   (stable, working now)")
+    fmt.Println("  2) WireGuard (experimental; server config must be correct)")
+    fmt.Print("Enter choice [1]: ")
+
+    line, _ := reader.ReadString('\n')
+    choice := strings.TrimSpace(strings.ToLower(line))
+
+    switch choice {
+    case "", "1", "openvpn", "ovpn":
+        return "openvpn"
+    case "2", "wireguard", "wg":
+        return "wireguard"
+    default:
+        fmt.Println("Unrecognized choice, defaulting to OpenVPN.")
+        return "openvpn"
+    }
+}
+
 // cmdConnect:
 // - Uses the subscription token flow exactly as before
 // - Calls POST /session/create with {token, client_wg_pubkey, backend}
 // - If backend == "wireguard": builds and writes a WG config (existing behavior)
 // - If backend == "openvpn": expects ovpn_profile in the response and writes meerkat.ovpn
 func cmdConnect() error {
-	nodeURL := os.Getenv("MEERKAT_NODE_URL")
-	if nodeURL == "" {
-		nodeURL = "http://localhost:9090"
-	}
+    nodeURL := os.Getenv("MEERKAT_NODE_URL")
+    if nodeURL == "" {
+        nodeURL = "http://localhost:9090"
+    }
 
-	backend := os.Getenv("MEERKAT_TUNNEL_BACKEND")
-	if backend == "" {
-		backend = "wireguard" // default to current behavior
-	}
+    backend := promptBackend()
+    log.Printf("Using backend=%s\n", backend)
 
-	poolPub := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
-	if poolPub == "" {
-		return fmt.Errorf("MEERKAT_CLIENT_POOL_PUBKEY not set")
-	}
+    poolPub := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
+    if poolPub == "" {
+        return fmt.Errorf("MEERKAT_CLIENT_POOL_PUBKEY not set")
+    }
 
 	ts, err := client.LoadTokenStore()
 	if err != nil {
