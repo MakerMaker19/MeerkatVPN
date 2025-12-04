@@ -7,6 +7,7 @@ import (
     "encoding/json"
     "fmt"
     "io"
+    "io/fs"
     "log"
     "net/http"
     "os"
@@ -113,19 +114,35 @@ func promptBackend() string {
 }
 
 // copyOVPNToOpenVPNConfigDir tries to copy the generated profile into
-// the OpenVPN GUI config directory on Windows, overwriting any old copy.
+// the OpenVPN GUI config directory on Windows, overwriting any existing
+// "meerkat.ovpn" it finds (even in subfolders).
 func copyOVPNToOpenVPNConfigDir(srcPath string) {
     if runtime.GOOS != "windows" {
         return
     }
 
-    // 1) Allow explicit override:
+    // Read source once
+    data, err := os.ReadFile(srcPath)
+    if err != nil {
+        log.Printf("copyOVPNToOpenVPNConfigDir: read %s: %v\n", srcPath, err)
+        return
+    }
+
+    // 🔹 Highest priority: explicit full profile path (for power users)
+    if profilePath := os.Getenv("MEERKAT_OPENVPN_PROFILE_PATH"); profilePath != "" {
+        if err := os.WriteFile(profilePath, data, 0o600); err != nil {
+            log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", profilePath, err)
+            return
+        }
+        log.Printf("Copied %s to explicit OpenVPN profile path: %s\n", srcPath, profilePath)
+        return
+    }
+
+    // 🔹 Detect base config directory
     destDir := os.Getenv("MEERKAT_OPENVPN_CONFIG_DIR")
 
-    // 2) If not set, try %USERPROFILE%\OpenVPN\config
     if destDir == "" {
-        home, err := os.UserHomeDir()
-        if err == nil {
+        if home, err := os.UserHomeDir(); err == nil {
             candidate := filepath.Join(home, "OpenVPN", "config")
             if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
                 destDir = candidate
@@ -133,7 +150,6 @@ func copyOVPNToOpenVPNConfigDir(srcPath string) {
         }
     }
 
-    // 3) As a fallback, try %ProgramFiles%\OpenVPN\config
     if destDir == "" {
         if pf := os.Getenv("ProgramFiles"); pf != "" {
             candidate := filepath.Join(pf, "OpenVPN", "config")
@@ -144,16 +160,29 @@ func copyOVPNToOpenVPNConfigDir(srcPath string) {
     }
 
     if destDir == "" {
-        log.Println("OpenVPN config dir not found; set MEERKAT_OPENVPN_CONFIG_DIR to enable auto-import")
+        log.Println("OpenVPN config dir not found; set MEERKAT_OPENVPN_CONFIG_DIR or MEERKAT_OPENVPN_PROFILE_PATH to enable auto-import")
         return
     }
 
-    destPath := filepath.Join(destDir, "meerkat.ovpn")
+    // 🔹 Search recursively for any existing "meerkat.ovpn"
+    var destPath string
+    _ = filepath.WalkDir(destDir, func(path string, d fs.DirEntry, err error) error {
+        if err != nil {
+            return nil
+        }
+        if d.IsDir() {
+            return nil
+        }
+        if strings.EqualFold(d.Name(), "meerkat.ovpn") {
+            destPath = path
+        }
+        return nil
+    })
 
-    data, err := os.ReadFile(srcPath)
-    if err != nil {
-        log.Printf("copyOVPNToOpenVPNConfigDir: read %s: %v\n", srcPath, err)
-        return
+    // If we found an existing meerkat.ovpn anywhere under config/, overwrite it.
+    if destPath == "" {
+        // No existing file? Create one in the root config dir.
+        destPath = filepath.Join(destDir, "meerkat.ovpn")
     }
 
     if err := os.WriteFile(destPath, data, 0o600); err != nil {
@@ -161,7 +190,7 @@ func copyOVPNToOpenVPNConfigDir(srcPath string) {
         return
     }
 
-    log.Printf("Copied %s to OpenVPN config dir: %s\n", srcPath, destPath)
+    log.Printf("Copied %s to OpenVPN config profile: %s\n", srcPath, destPath)
 }
 
 // cmdConnect:
