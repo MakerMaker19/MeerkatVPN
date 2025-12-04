@@ -1,21 +1,22 @@
 package main
 
 import (
-	"bytes"
-	"bufio"
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"os"
-	"runtime"
-	"strings"
-	"time"
+    "bytes"
+    "bufio"
+    "context"
+    "encoding/json"
+    "fmt"
+    "io"
+    "log"
+    "net/http"
+    "os"
+    "path/filepath"
+    "runtime"
+    "strings"
+    "time"
 
-	"github.com/MakerMaker19/meerkatvpn/pkg/client"
-	"github.com/MakerMaker19/meerkatvpn/pkg/vpn"
+    "github.com/MakerMaker19/meerkatvpn/pkg/client"
+    "github.com/MakerMaker19/meerkatvpn/pkg/vpn"
 )
 
 func main() {
@@ -109,6 +110,58 @@ func promptBackend() string {
         fmt.Println("Unrecognized choice, defaulting to OpenVPN.")
         return "openvpn"
     }
+}
+
+// copyOVPNToOpenVPNConfigDir tries to copy the generated profile into
+// the OpenVPN GUI config directory on Windows, overwriting any old copy.
+func copyOVPNToOpenVPNConfigDir(srcPath string) {
+    if runtime.GOOS != "windows" {
+        return
+    }
+
+    // 1) Allow explicit override:
+    destDir := os.Getenv("MEERKAT_OPENVPN_CONFIG_DIR")
+
+    // 2) If not set, try %USERPROFILE%\OpenVPN\config
+    if destDir == "" {
+        home, err := os.UserHomeDir()
+        if err == nil {
+            candidate := filepath.Join(home, "OpenVPN", "config")
+            if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
+                destDir = candidate
+            }
+        }
+    }
+
+    // 3) As a fallback, try %ProgramFiles%\OpenVPN\config
+    if destDir == "" {
+        if pf := os.Getenv("ProgramFiles"); pf != "" {
+            candidate := filepath.Join(pf, "OpenVPN", "config")
+            if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
+                destDir = candidate
+            }
+        }
+    }
+
+    if destDir == "" {
+        log.Println("OpenVPN config dir not found; set MEERKAT_OPENVPN_CONFIG_DIR to enable auto-import")
+        return
+    }
+
+    destPath := filepath.Join(destDir, "meerkat.ovpn")
+
+    data, err := os.ReadFile(srcPath)
+    if err != nil {
+        log.Printf("copyOVPNToOpenVPNConfigDir: read %s: %v\n", srcPath, err)
+        return
+    }
+
+    if err := os.WriteFile(destPath, data, 0o600); err != nil {
+        log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", destPath, err)
+        return
+    }
+
+    log.Printf("Copied %s to OpenVPN config dir: %s\n", srcPath, destPath)
 }
 
 // cmdConnect:
@@ -207,6 +260,8 @@ func cmdConnect() error {
 		if err := os.WriteFile(path, []byte(sr.OVPNProfile), 0o600); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}
+    	
+		copyOVPNToOpenVPNConfigDir(path)
 
 		fmt.Println("Node accepted session:")
 		fmt.Println("  status :", sr.Status)
