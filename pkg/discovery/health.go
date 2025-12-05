@@ -105,8 +105,7 @@ func probeNode(n NodeInfo) {
 
 	setHealth(n.ID, h)
 
-	if debug := (strings.ToLower(strings.TrimSpace(
-		getenvDefault("MEERKAT_DEBUG_DISCOVERY", ""))) == "1"); debug {
+	if os.Getenv("MEERKAT_DEBUG_DISCOVERY") == "1" {
 		log.Printf("[discovery] probe %s (%s): healthy=%v latency=%dms err=%v\n",
 			n.ID, hostPort, h.Healthy, h.LatencyMs, err)
 	}
@@ -164,7 +163,7 @@ func rankByLatency(nodes []NodeInfo) []NodeInfo {
 		a := wrapped[i]
 		b := wrapped[j]
 
-		// If either has no health data, keep original relative order.
+		// If neither has health data, keep original relative order.
 		if !a.OK && !b.OK {
 			return a.Idx < b.Idx
 		}
@@ -196,12 +195,4 @@ func rankByLatency(nodes []NodeInfo) []NodeInfo {
 		out[i] = w.N
 	}
 	return out
-}
-
-// small helper so we can reuse this without importing os here/there
-func getenvDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
