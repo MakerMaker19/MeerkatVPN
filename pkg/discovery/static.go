@@ -54,6 +54,12 @@ func (staticFinder) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 
 // internal helper with the selection logic
 func findNodeStatic(preferredRegion, backend string) (*NodeInfo, error) {
+	return findNodeFromList(staticNodes, preferredRegion, backend)
+}
+
+// findNodeFromList selects a node from an arbitrary list using the same rules
+// as the static finder (backend support, health/latency, region preference).
+func findNodeFromList(nodes []NodeInfo, preferredRegion, backend string) (*NodeInfo, error) {
 	if backend == "" {
 		backend = "openvpn"
 	}
@@ -63,11 +69,11 @@ func findNodeStatic(preferredRegion, backend string) (*NodeInfo, error) {
 
 	if debug {
 		log.Printf("[discovery] starting static discovery: backend=%s region=%s\n", backend, preferredRegion)
-		log.Printf("[discovery] staticNodes=%+v\n", staticNodes)
+		log.Printf("[discovery] available nodes=%+v\n", nodes)
 	}
 
 	// 1) Filter by static healthy flag + backend support
-	candidates := filterByBackend(staticNodes, backend)
+	candidates := filterByBackend(nodes, backend)
 	if debug {
 		log.Printf("[discovery] candidates after backend filter=%+v\n", candidates)
 	}

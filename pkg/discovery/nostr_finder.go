@@ -2,20 +2,19 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"os"
-	"sync"
 	"strings"
-	//"time"
+	"sync"
 
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// NostrNodeAnnouncementKind is the Nostr kind we use for node announcements.
-// You can change this later; just keep it app-specific.
+// NostrNodeAnnouncementKind is the Nostr kind used for node announcements.
 const NostrNodeAnnouncementKind = 38383
 
-// NostrNodeAnnouncement models the content of a node-announcement event.
+// NostrNodeAnnouncement models the JSON content of a node-announcement event.
 type NostrNodeAnnouncement struct {
 	APIURL   string   `json:"api_url"`
 	Region   string   `json:"region"`
@@ -29,9 +28,10 @@ type NostrNodeAnnouncement struct {
 // building a dynamic list of NodeInfo. If no dynamic nodes are
 // available, it falls back to a static Finder.
 type nostrFinder struct {
-	relays    []string
-	poolPub   string
-	fallback  Finder
+	relays  []string
+	poolPub string
+
+	fallback Finder
 
 	mu    sync.RWMutex
 	nodes []NodeInfo
@@ -59,61 +59,178 @@ func (f *nostrFinder) ensureStarted() {
 }
 
 // run connects to Nostr relays and subscribes for node-announcement events.
-// For now this is a stub that logs a TODO and does not break anything.
 func (f *nostrFinder) run() {
 	if len(f.relays) == 0 {
 		log.Println("[discovery/nostr] no relays configured; using fallback only")
 		return
 	}
 
-	// Skeleton for future implementation:
-	// - connect to relays
-	// - subscribe for kind=NostrNodeAnnouncementKind
-	// - filter by tag pool=<f.poolPub>
-	// - parse events into NodeInfo and store in f.nodes
+	ctx := context.Background()
+	pool := nostr.NewSimplePool(ctx)
 
-	log.Printf("[discovery/nostr] starting Nostr discovery (relays=%v, pool=%s)\n",
-		f.relays, f.poolPub)
+	debug := os.Getenv("MEERKAT_DEBUG_DISCOVERY") == "1"
 
-	// Example pseudocode (commented so it doesn't run yet):
-	/*
-		ctx := context.Background()
-		relayPool := nostr.NewSimplePool(ctx)
-
-		go func() {
-			defer relayPool.Close()
-
-			for _, addr := range f.relays {
-				_, err := relayPool.EnsureRelay(addr)
-				if err != nil {
-					log.Println("[discovery/nostr] relay error:", err)
-				}
+	// Connect relays
+	for _, addr := range f.relays {
+		if _, err := pool.EnsureRelay(addr); err != nil {
+			if debug {
+				log.Printf("[discovery/nostr] relay error for %s: %v\n", addr, err)
 			}
+		} else if debug {
+			log.Printf("[discovery/nostr] connected relay %s\n", addr)
+		}
+	}
 
-			filters := []nostr.Filter{
-				{
-					Kinds: []int{NostrNodeAnnouncementKind},
-					Tags: nostr.TagMap{
-						"pool": []string{f.poolPub},
-					},
-				},
-			}
+	if f.poolPub == "" && debug {
+		log.Printf("[discovery/nostr] WARNING: poolPubKey is empty; subscription will match all pools")
+	}
 
-			evChan := relayPool.SubManyEose(ctx, f.relays, filters)
+	// Subscribe for announcements of our kind, filtered by pool tag.
+	filters := nostr.Filters{
+		{
+			Kinds: []int{NostrNodeAnnouncementKind},
+			Tags:  nostr.TagMap{"pool": []string{f.poolPub}}, // empty string matches any pool
+		},
+	}
 
-			for ev := range evChan {
-				// TODO: parse event into NodeInfo and call f.updateFromEvent(ev)
-			}
-		}()
-	*/
+	ch := pool.SubMany(ctx, f.relays, filters)
+	log.Printf("[discovery/nostr] started subscription (kind=%d, pool=%s, relays=%v)\n",
+		NostrNodeAnnouncementKind, f.poolPub, f.relays)
+
+	for ev := range ch {
+		if ev.Event == nil {
+			continue
+		}
+		f.updateFromEvent(ev.Event)
+	}
+
+	if debug {
+		log.Println("[discovery/nostr] event channel closed; Nostr discovery loop ended")
+	}
 }
 
-// updateFromEvent would parse a Nostr event and turn it into a NodeInfo.
-// Left as TODO for now so we don't break anything.
+// updateFromEvent parses a Nostr event and turns it into a NodeInfo,
+// merging it into the in-memory node list.
 func (f *nostrFinder) updateFromEvent(ev *nostr.Event) {
-	_ = ev
-	// TODO: parse tags + JSON content into NodeInfo and merge into f.nodes.
+	if ev == nil {
+		return
+	}
+
+	debug := os.Getenv("MEERKAT_DEBUG_DISCOVERY") == "1"
+
+	if ev.Kind != NostrNodeAnnouncementKind {
+		return
+	}
+
+	// Filter on pool tag, if configured.
+	poolTag := firstTagValue(ev.Tags, "pool")
+	if f.poolPub != "" {
+		if poolTag == "" {
+			if debug {
+				log.Printf("[discovery/nostr] ignoring event %s: missing pool tag\n", ev.ID)
+			}
+			return
+		}
+		if !strings.EqualFold(poolTag, f.poolPub) {
+			if debug {
+				log.Printf("[discovery/nostr] ignoring event %s: pool mismatch (%s != %s)\n",
+					ev.ID, poolTag, f.poolPub)
+			}
+			return
+		}
+	}
+
+	var ann NostrNodeAnnouncement
+	if err := json.Unmarshal([]byte(ev.Content), &ann); err != nil {
+		if debug {
+			log.Printf("[discovery/nostr] invalid JSON content in event %s: %v\n", ev.ID, err)
+		}
+		return
+	}
+
+	if ann.APIURL == "" {
+		if debug {
+			log.Printf("[discovery/nostr] ignoring event %s: api_url missing in content\n", ev.ID)
+		}
+		return
+	}
+
+	node := NodeInfo{
+		ID:      ev.PubKey,
+		APIURL:  ann.APIURL,
+		Region:  strings.TrimSpace(ann.Region),
+		Country: strings.TrimSpace(ann.Country),
+		City:    strings.TrimSpace(ann.City),
+		Backends: append([]string(nil), ann.Backends...),
+		Healthy:  true,
+	}
+
+	// Tags can override JSON content.
+	if v := firstTagValue(ev.Tags, "region"); v != "" {
+		node.Region = v
+	}
+	if v := firstTagValue(ev.Tags, "country"); v != "" {
+		node.Country = v
+	}
+	if v := firstTagValue(ev.Tags, "city"); v != "" {
+		node.City = v
+	}
+
+	backendTags := allTagValues(ev.Tags, "backend")
+	if len(backendTags) > 0 {
+		node.Backends = backendTags
+	}
+	if len(node.Backends) == 0 {
+		node.Backends = []string{"openvpn"}
+	}
+
+	if debug {
+		log.Printf("[discovery/nostr] announcement from %s: api=%s region=%s country=%s city=%s backends=%v\n",
+			node.ID, node.APIURL, node.Region, node.Country, node.City, node.Backends)
+	}
+
+	// Merge into our node list.
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	for i := range f.nodes {
+		if f.nodes[i].ID == node.ID {
+			f.nodes[i] = node
+			if debug {
+				log.Printf("[discovery/nostr] updated node %s\n", node.ID)
+			}
+			return
+		}
+	}
+
+	f.nodes = append(f.nodes, node)
+	if debug {
+		log.Printf("[discovery/nostr] now tracking %d nostr nodes\n", len(f.nodes))
+	}
 }
+
+// Helpers for working with Nostr tags.
+
+func firstTagValue(tags nostr.Tags, name string) string {
+	for _, t := range tags {
+		if len(t) >= 2 && t[0] == name {
+			return t[1]
+		}
+	}
+	return ""
+}
+
+func allTagValues(tags nostr.Tags, name string) []string {
+	var out []string
+	for _, t := range tags {
+		if len(t) >= 2 && t[0] == name {
+			out = append(out, t[1])
+		}
+	}
+	return out
+}
+
+// Finder implementation ///////////////////////////////////////////////////////
 
 func (f *nostrFinder) FindNode(
 	ctx context.Context,
@@ -123,7 +240,7 @@ func (f *nostrFinder) FindNode(
 ) (*NodeInfo, error) {
 	f.ensureStarted()
 
-	_ = poolPubKey // you may use this later to filter by pool
+	_ = poolPubKey // may be used later to filter by pool
 
 	f.mu.RLock()
 	nodes := make([]NodeInfo, len(f.nodes))
@@ -151,55 +268,4 @@ func (f *nostrFinder) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 		return f.fallback.ListNodes(ctx)
 	}
 	return nodes, nil
-}
-
-// findNodeFromList mirrors findNodeStatic but takes an explicit list.
-func findNodeFromList(nodes []NodeInfo, preferredRegion, backend string) (*NodeInfo, error) {
-	if backend == "" {
-		backend = "openvpn"
-	}
-	preferredRegion = strings.ToLower(strings.TrimSpace(preferredRegion))
-
-	debug := os.Getenv("MEERKAT_DEBUG_DISCOVERY") == "1"
-
-	if debug {
-		log.Printf("[discovery/nostr] starting discovery: backend=%s region=%s\n", backend, preferredRegion)
-		log.Printf("[discovery/nostr] nodes=%+v\n", nodes)
-	}
-
-	candidates := filterByBackend(nodes, backend)
-	if debug {
-		log.Printf("[discovery/nostr] candidates after backend filter=%+v\n", candidates)
-	}
-
-	if len(candidates) == 0 {
-		return nil, context.DeadlineExceeded // or errors.New("no nodes")
-	}
-
-	candidates = rankByLatency(candidates)
-	if debug {
-		log.Printf("[discovery/nostr] candidates after latency ranking=%+v\n", candidates)
-	}
-
-	if preferredRegion == "" || preferredRegion == "auto" {
-		if debug {
-			log.Printf("[discovery/nostr] region=auto -> picking first candidate: %s\n", candidates[0].ID)
-		}
-		return &candidates[0], nil
-	}
-
-	for _, n := range candidates {
-		if strings.EqualFold(n.Region, preferredRegion) {
-			if debug {
-				log.Printf("[discovery/nostr] exact region match found: %s (%s)\n", n.ID, n.Region)
-			}
-			return &n, nil
-		}
-	}
-
-	if debug {
-		log.Printf("[discovery/nostr] no exact region match for %s; falling back to %s\n",
-			preferredRegion, candidates[0].ID)
-	}
-	return &candidates[0], nil
 }

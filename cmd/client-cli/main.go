@@ -53,6 +53,10 @@ func main() {
 		if err := cmdConnect(); err != nil {
 			log.Fatal(err)
 		}
+	case "watch-nodes":       
+		if err := cmdWatchNodes(); err != nil {
+			log.Fatal(err)
+		}
 	default:
 		fmt.Println("unknown command:", cmd)
 		printUsage()
