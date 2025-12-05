@@ -1,4 +1,3 @@
-// pkg/discovery/discovery.go
 package discovery
 
 import "context"
@@ -7,6 +6,7 @@ import "context"
 // (static list, Nostr registry, HTTP pool API, etc.).
 type Finder interface {
     FindNode(ctx context.Context, poolPubKey, preferredRegion, backend string) (*NodeInfo, error)
+        ListNodes(ctx context.Context) ([]NodeInfo, error) 
 }
 
 // defaultFinder is what the rest of the code uses.
@@ -30,4 +30,9 @@ func FindNode(
     backend string,
 ) (*NodeInfo, error) {
     return defaultFinder.FindNode(ctx, poolPubKey, preferredRegion, backend)
+}
+
+// ListNodes exposes whatever the current finder knows about.
+func ListNodes(ctx context.Context) ([]NodeInfo, error) {
+    return defaultFinder.ListNodes(ctx)
 }

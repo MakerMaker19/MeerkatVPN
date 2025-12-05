@@ -39,6 +39,10 @@ func main() {
 		if err := cmdListTokens(); err != nil {
 			log.Fatal(err)
 		}
+	case "list-nodes": 
+    	if err := cmdListNodes(); err != nil {
+     		log.Fatal(err)
+    	}
 	case "connect":
 		if err := cmdConnect(); err != nil {
 			log.Fatal(err)
@@ -51,13 +55,15 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("MeerkatVPN client CLI")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  meerkat-client receive-tokens   # connect to Nostr relays and store subscription tokens")
-	fmt.Println("  meerkat-client list-tokens      # list stored subscription tokens")
-	fmt.Println("  meerkat-client connect          # use latest valid token to request a session from a node")
+    fmt.Println("MeerkatVPN client CLI")
+    fmt.Println()
+    fmt.Println("Usage:")
+    fmt.Println("  meerkat-client receive-tokens   # connect to Nostr relays and store subscription tokens")
+    fmt.Println("  meerkat-client list-tokens      # list stored subscription tokens")
+    fmt.Println("  meerkat-client list-nodes       # list known Meerkat nodes via discovery")
+    fmt.Println("  meerkat-client connect          # use latest valid token to request a session from a node")
 }
+
 
 func cmdReceiveTokens() error {
 	ctx := context.Background()
@@ -85,6 +91,34 @@ func cmdListTokens() error {
 		)
 	}
 	return nil
+}
+
+func cmdListNodes() error {
+    ctx := context.Background()
+
+    nodes, err := discovery.ListNodes(ctx)
+    if err != nil {
+        return fmt.Errorf("list nodes: %w", err)
+    }
+
+    if len(nodes) == 0 {
+        fmt.Println("No nodes known via discovery.")
+        return nil
+    }
+
+    fmt.Println("Known Meerkat nodes (via discovery):")
+    for _, n := range nodes {
+        backends := strings.Join(n.Backends, ",")
+        if backends == "" {
+            backends = "(none)"
+        }
+        fmt.Printf(
+            "- id=%s | api=%s | region=%s | country=%s | city=%s | backends=%s | healthy=%v\n",
+            n.ID, n.APIURL, n.Region, n.Country, n.City, backends, n.Healthy,
+        )
+    }
+
+    return nil
 }
 
 func promptBackend() string {

@@ -1,10 +1,11 @@
-// pkg/discovery/static.go
 package discovery
 
 import (
-    "context"
-    "errors"
-    "strings"
+	"context"
+	"errors"
+	"log"
+	"os"
+	"strings"
 )
 
 // staticNodes is a simple, in-memory registry.
@@ -19,79 +20,110 @@ var staticNodes = []NodeInfo{
         Backends: []string{"openvpn", "wireguard"},
         Healthy:  true,
     },
-    // Example for your VPS:
-    // {
-    //     ID:       "node-us-east-1",
-    //     APIURL:   "http://46.62.204.11:9090",
-    //     Region:   "us-east-1",
-    //     Country:  "US",
-    //     City:     "NYC",
-    //     Backends: []string{"openvpn"},
-    //     Healthy:  true,
-    // },
+    {
+        ID:       "vps-us-east-1",
+        APIURL:   "http://46.62.204.11:9090", 
+        Region:   "us-east-1",
+        Country:  "US",
+        City:     "nyc",
+        Backends: []string{"openvpn"},        
+        Healthy:  true,
+    },
 }
+
 
 // staticFinder implements Finder using staticNodes.
 type staticFinder struct{}
 
+// FindNode implements Finder.FindNode using the static list.
 func (staticFinder) FindNode(
-    ctx context.Context,
-    poolPubKey string,
-    preferredRegion string,
-    backend string,
+	ctx context.Context,
+	poolPubKey string,
+	preferredRegion string,
+	backend string,
 ) (*NodeInfo, error) {
-    _ = ctx
-    _ = poolPubKey
-    return findNodeStatic(preferredRegion, backend)
+	_ = ctx
+	_ = poolPubKey
+	return findNodeStatic(preferredRegion, backend)
 }
 
-// internal helper with the previous selection logic
+// ListNodes implements Finder.ListNodes using the static list.
+func (staticFinder) ListNodes(ctx context.Context) ([]NodeInfo, error) {
+	_ = ctx
+	out := make([]NodeInfo, len(staticNodes))
+	copy(out, staticNodes)
+	return out, nil
+}
+
+// internal helper with the selection logic
 func findNodeStatic(preferredRegion, backend string) (*NodeInfo, error) {
-    if backend == "" {
-        backend = "openvpn"
-    }
-    preferredRegion = strings.ToLower(strings.TrimSpace(preferredRegion))
+	if backend == "" {
+		backend = "openvpn"
+	}
+	preferredRegion = strings.ToLower(strings.TrimSpace(preferredRegion))
 
-    // 1) Filter by healthy + backend support
-    candidates := filterByBackend(staticNodes, backend)
-    if len(candidates) == 0 {
-        return nil, errors.New("no nodes support backend " + backend)
-    }
+	debug := os.Getenv("MEERKAT_DEBUG_DISCOVERY") == "1"
 
-    // 2) If region is "auto" or empty, just pick first healthy candidate for now.
-    if preferredRegion == "" || preferredRegion == "auto" {
-        return &candidates[0], nil
-    }
+	if debug {
+		log.Printf("[discovery] starting static discovery: backend=%s region=%s\n", backend, preferredRegion)
+		log.Printf("[discovery] staticNodes=%+v\n", staticNodes)
+	}
 
-    // 3) Try to find exact region match.
-    for _, n := range candidates {
-        if strings.EqualFold(n.Region, preferredRegion) {
-            return &n, nil
-        }
-    }
+	// 1) Filter by healthy + backend support
+	candidates := filterByBackend(staticNodes, backend)
+	if debug {
+		log.Printf("[discovery] candidates after backend filter=%+v\n", candidates)
+	}
 
-    // 4) Fallback: just return the first candidate.
-    return &candidates[0], nil
+	if len(candidates) == 0 {
+		return nil, errors.New("no nodes support backend " + backend)
+	}
+
+	// 2) If region is "auto" or empty, just pick first healthy candidate for now.
+	if preferredRegion == "" || preferredRegion == "auto" {
+		if debug {
+			log.Printf("[discovery] region=auto -> picking first candidate: %s\n", candidates[0].ID)
+		}
+		return &candidates[0], nil
+	}
+
+	// 3) Try to find exact region match.
+	for _, n := range candidates {
+		if strings.EqualFold(n.Region, preferredRegion) {
+			if debug {
+				log.Printf("[discovery] exact region match found: %s (%s)\n", n.ID, n.Region)
+			}
+			return &n, nil
+		}
+	}
+
+	// 4) Fallback: just return the first candidate.
+	if debug {
+		log.Printf("[discovery] no exact region match for %s; falling back to %s\n",
+			preferredRegion, candidates[0].ID)
+	}
+	return &candidates[0], nil
 }
 
+// filterByBackend returns only nodes that are healthy and support the given backend.
 func filterByBackend(nodes []NodeInfo, backend string) []NodeInfo {
-    backend = strings.ToLower(backend)
+	backend = strings.ToLower(backend)
 
-    var out []NodeInfo
-    for _, n := range nodes {
-        if !n.Healthy {
-            continue
-        }
-        if backend == "" {
-            out = append(out, n)
-            continue
-        }
-        for _, b := range n.Backends {
-            if strings.EqualFold(b, backend) {
-                out = append(out, n)
-                break
-            }
-        }
-    }
-    return out
+	var out []NodeInfo
+	for _, n := range nodes {
+		if !n.Healthy {
+			continue
+		}
+		if backend == "" {
+			out = append(out, n)
+			continue
+		}
+		for _, b := range n.Backends {
+			if strings.EqualFold(b, backend) {
+				out = append(out, n)
+				break
+			}
+		}
+	}
+	return out
 }
