@@ -21,6 +21,12 @@ import (
     "github.com/MakerMaker19/meerkatvpn/pkg/vpn"
 )
 
+func init() {
+	// Start background node health probing every 30s.
+	// Safe to call multiple times; discovery package guards it.
+	discovery.StartBackgroundHealthProbe(30 * time.Second)
+}
+
 
 func main() {
 	if len(os.Args) < 2 {

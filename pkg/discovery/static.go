@@ -69,15 +69,22 @@ func findNodeStatic(preferredRegion, backend string) (*NodeInfo, error) {
 		log.Printf("[discovery] staticNodes=%+v\n", staticNodes)
 	}
 
-	// 1) Filter by healthy + backend support
-	candidates := filterByBackend(staticNodes, backend)
-	if debug {
-		log.Printf("[discovery] candidates after backend filter=%+v\n", candidates)
-	}
+    // 1) Filter by healthy + backend support (static flags)
+    candidates := filterByBackend(staticNodes, backend)
+    if debug {
+        log.Printf("[discovery] candidates after backend filter=%+v\n", candidates)
+    }
 
-	if len(candidates) == 0 {
-		return nil, errors.New("no nodes support backend " + backend)
-	}
+    if len(candidates) == 0 {
+        return nil, errors.New("no nodes support backend " + backend)
+    }
+
+    // 1.5) Rank candidates by runtime health/latency.
+    candidates = rankByLatency(candidates)
+    if debug {
+        log.Printf("[discovery] candidates after latency ranking=%+v\n", candidates)
+    }
+
 
 	// 2) If region is "auto" or empty, just pick first healthy candidate for now.
 	if preferredRegion == "" || preferredRegion == "auto" {
