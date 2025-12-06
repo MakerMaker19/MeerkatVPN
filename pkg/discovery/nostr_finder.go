@@ -74,12 +74,9 @@ func (f *nostrFinder) run() {
 	}
 
 	// Subscribe for announcements of our kind. If poolPub is non-empty,
-	// we also filter by the "pool" tag. (We still re-check inside the parser.)
+	// we still re-check inside the parser (to avoid relays rejecting unknown tags).
 	filter := nostr.Filter{
 		Kinds: []int{NostrNodeAnnouncementKind},
-	}
-	if f.poolPub != "" {
-		filter.Tags = nostr.TagMap{"pool": []string{f.poolPub}}
 	}
 	filters := nostr.Filters{filter}
 
