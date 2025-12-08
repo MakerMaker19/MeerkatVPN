@@ -19,15 +19,26 @@ import (
 // WireGuard + Nostr integration from the older implementation is
 // intentionally "on hold" so you can focus on getting OpenVPN working.
 func ConnectToNode(ctx context.Context, nodePubKey string) error {
-	backend := os.Getenv("MEERKAT_TUNNEL_BACKEND")
-	if backend == "" {
-		backend = "openvpn" // default to OpenVPN while WG is paused
-	}
+    // Backend: env → config → default
+    backend := os.Getenv("MEERKAT_TUNNEL_BACKEND")
+    if backend == "" {
+        if cfg := Config(); cfg != nil && cfg.Backend != "" {
+            backend = cfg.Backend
+        } else {
+            backend = "openvpn"
+        }
+    }
 
-	nodeURL := os.Getenv("MEERKAT_NODE_URL")
-	if nodeURL == "" {
-		return fmt.Errorf("MEERKAT_NODE_URL is not set (e.g. http://46.62.204.11:9090)")
-	}
+    // Node URL: env → config → error
+    nodeURL := os.Getenv("MEERKAT_NODE_URL")
+    if nodeURL == "" {
+        if cfg := Config(); cfg != nil && cfg.NodeURL != "" {
+            nodeURL = cfg.NodeURL
+        }
+    }
+    if nodeURL == "" {
+        return fmt.Errorf("MEERKAT_NODE_URL not set and no node_url in meerkat-client.yaml")
+    }
 
 	// For now we assume the node exposes a simple HTTP endpoint like:
 	//   GET /connect

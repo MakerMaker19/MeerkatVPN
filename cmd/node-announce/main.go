@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/MakerMaker19/meerkatvpn/pkg/discovery"
+	"github.com/MakerMaker19/meerkatvpn/pkg/nostrutil"
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip19"
 )
@@ -40,11 +41,17 @@ func run() error {
 	// Required envs.
 	nsec := strings.TrimSpace(os.Getenv("MEERKAT_NODE_NSEC"))
 	apiURL := strings.TrimSpace(os.Getenv("MEERKAT_NODE_API_URL"))
-	poolPub := strings.TrimSpace(os.Getenv("MEERKAT_POOL_PUBKEY"))
+	poolPubRaw := strings.TrimSpace(os.Getenv("MEERKAT_POOL_PUBKEY"))
 	relaysEnv := strings.TrimSpace(os.Getenv("MEERKAT_NOSTR_RELAYS"))
 
-	if nsec == "" || apiURL == "" || poolPub == "" || relaysEnv == "" {
+	if nsec == "" || apiURL == "" || poolPubRaw == "" || relaysEnv == "" {
 		return fmt.Errorf("MEERKAT_NODE_NSEC, MEERKAT_NODE_API_URL, MEERKAT_POOL_PUBKEY, and MEERKAT_NOSTR_RELAYS must be set")
+	}
+
+	// Allow npub or hex for MEERKAT_POOL_PUBKEY.
+	poolPub, err := nostrutil.ParsePubKey(poolPubRaw)
+	if err != nil {
+		return fmt.Errorf("failed to parse MEERKAT_POOL_PUBKEY (%q): %w", poolPubRaw, err)
 	}
 
 	relays := splitList(relaysEnv)

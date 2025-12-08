@@ -13,8 +13,8 @@ type Finder interface {
 }
 
 // defaultFinder is what the rest of the code uses.
-// Right now it's backed by a static in-memory list (wrapped in a staticFinder).
-var defaultFinder Finder = NewStaticFinder()
+// Right now it's backed by the registry-backed finder.
+var defaultFinder Finder = NewRegistryFinder(GlobalRegistry())
 
 // NewStaticFinder returns a Finder implementation that uses staticNodes.
 func NewStaticFinder() Finder {

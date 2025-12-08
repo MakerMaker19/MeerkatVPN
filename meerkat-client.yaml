@@ -1,0 +1,43 @@
+# meerkat-client.yaml
+# Config for the Meerkat client CLI.
+# Env vars override these values.
+
+# -----------------------------------------------------------------------------
+# Nostr identity & pool
+# -----------------------------------------------------------------------------
+
+# Your Nostr private key (client identity). Accepts nsec or 64-char hex.
+nostr_privkey: "nsec1clientprivkeygoeshere...."
+
+# Pool pubkey we trust to issue subscription tokens. Accepts npub or hex.
+pool_pubkey: "npub1poolpubkeygoeshere...."
+
+# -----------------------------------------------------------------------------
+# Relays (discovery + tokens)
+# -----------------------------------------------------------------------------
+
+# Relays used for receiving subscription tokens (DMs) and subscribing to node
+# announcements. If this list is empty and no env is set, code falls back to
+# these same defaults.
+relays:
+  - "wss://relay.damus.io"
+  - "wss://relay.primal.net"
+  - "wss://nos.lol"
+  - "wss://nostr.wine"
+  - "wss://relay.current.fyi"
+
+# -----------------------------------------------------------------------------
+# Node selection preferences
+# -----------------------------------------------------------------------------
+
+# Preferred region when auto-selecting a node. Leave empty to mean "auto".
+preferred_region: ""
+
+# Default VPN backend requested from the node. Valid: "openvpn" or "wireguard".
+# If blank, defaults to "openvpn".
+backend: "openvpn"
+
+# Optional: hard-coded node URL override. If non-empty, discovery is skipped.
+# Example: "http://203.0.113.42:9090"
+node_url: ""
+

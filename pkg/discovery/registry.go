@@ -13,6 +13,14 @@ type Registry struct {
 	nodes map[string]*NodeInfo
 }
 
+// Global singleton used by callers that don't want to manage their own instance.
+var globalRegistry = NewRegistry()
+
+// GlobalRegistry returns the package-level registry singleton.
+func GlobalRegistry() *Registry {
+	return globalRegistry
+}
+
 // NewRegistry creates an empty Registry.
 func NewRegistry() *Registry {
 	return &Registry{

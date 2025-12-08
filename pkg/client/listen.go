@@ -15,20 +15,29 @@ import (
 	"github.com/MakerMaker19/meerkatvpn/pkg/vpn"
 )
 
-func clientRelayURLsFromEnv() []string {
-	v := os.Getenv("MEERKAT_CLIENT_RELAYS")
-	if v == "" {
-		return []string{"wss://relay.damus.io", "wss://relay.primal.net"}
-	}
-	parts := strings.Split(v, ",")
-	out := []string{}
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
+func clientRelayURLs() []string {
+	// 1) Env override
+	if v := os.Getenv("MEERKAT_CLIENT_RELAYS"); v != "" {
+		parts := strings.Split(v, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		if len(out) > 0 {
+			return out
 		}
 	}
-	return out
+
+	// 2) Config fallback
+	if cfg := Config(); cfg != nil && len(cfg.Relays) > 0 {
+		return cfg.Relays
+	}
+
+	// 3) Hard-coded defaults
+	return DefaultRelays()
 }
 
 // ListenForTokens connects to relays and stores subscription tokens found in kind-4 DMs.
@@ -38,18 +47,32 @@ func clientRelayURLsFromEnv() []string {
 //   MEERKAT_CLIENT_RELAYS         (optional, comma-separated)
 //   MEERKAT_CLIENT_POOL_PUBKEY    (optional, hex or npub; if set, only accept tokens from this pubkey)
 func ListenForTokens(ctx context.Context) error {
+	// 1) Nostr privkey: env overrides config.
 	priv := os.Getenv("MEERKAT_CLIENT_NOSTR_PRIVKEY")
 	if priv == "" {
-		return fmt.Errorf("MEERKAT_CLIENT_NOSTR_PRIVKEY not set")
+		if cfg := Config(); cfg != nil && cfg.NostrPrivKey != "" {
+			priv = cfg.NostrPrivKey
+		}
 	}
-	relays := clientRelayURLsFromEnv()
+	if priv == "" {
+		return fmt.Errorf("MEERKAT_CLIENT_NOSTR_PRIVKEY not set and no nostr_privkey in meerkat-client.yaml")
+	}
 
+	relays := clientRelayURLs()
+
+	// 2) Pool pubkey filter: env overrides config.
 	poolPubFilter := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
+	if poolPubFilter == "" {
+		if cfg := Config(); cfg != nil && cfg.PoolPubKey != "" {
+			poolPubFilter = cfg.PoolPubKey
+		}
+	}
+
 	var poolPubHex string
 	if poolPubFilter != "" {
 		parsed, err := nostrutil.ParsePubKey(poolPubFilter)
 		if err != nil {
-			return fmt.Errorf("failed to parse MEERKAT_CLIENT_POOL_PUBKEY: %w", err)
+			return fmt.Errorf("failed to parse pool pubkey (%q): %w", poolPubFilter, err)
 		}
 		poolPubHex = parsed
 	}
@@ -82,7 +105,7 @@ func ListenForTokens(ctx context.Context) error {
 func listenOnRelay(ctx context.Context, relay *nostr.Relay, myPubHex, poolPubHex string) error {
 	filter := nostr.Filter{
 		Kinds: []int{nostr.KindEncryptedDirectMessage}, // kind 4
-		Limit:  0,                                      // no explicit limit
+		Limit: 0,                                       // no explicit limit
 	}
 
 	sub, err := relay.Subscribe(ctx, nostr.Filters{filter})

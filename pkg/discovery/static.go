@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"strings"
+	"sync"
+	"time"
 )
 
 // staticNodes is a simple, in-memory registry.
@@ -29,6 +31,37 @@ var staticNodes = []NodeInfo{
 		Backends: []string{"openvpn", "wireguard"},
 		Healthy:  true,
 	},
+}
+
+var staticSeedOnce sync.Once
+
+func init() {
+	seedStaticNodesIntoRegistry()
+}
+
+// seedStaticNodesIntoRegistry loads the built-in static nodes into the global registry.
+func seedStaticNodesIntoRegistry() {
+	staticSeedOnce.Do(func() {
+		reg := GlobalRegistry()
+		now := time.Now()
+		for _, n := range staticNodes {
+			a := Announcement{
+				ID:          n.ID,
+				PoolPubKey:  "",
+				AnnouncedAt: now,
+				APIURL:      n.APIURL,
+				Backends:    n.Backends,
+				Region:      n.Region,
+				Country:     n.Country,
+				City:        n.City,
+				Version:     "",
+				Schema:      1,
+				Meta:        nil,
+				Weight:      1.0,
+			}
+			reg.UpsertAnnouncement(a, "static", now, 0)
+		}
+	})
 }
 
 // staticFinder implements Finder using staticNodes + runtime health data.

@@ -62,10 +62,11 @@ func StartBackgroundHealthProbe(interval time.Duration) {
 	})
 }
 
-// probeAllNodesOnce probes each statically-known node once.
+// probeAllNodesOnce probes each known node once.
 func probeAllNodesOnce() {
-	for _, n := range staticNodes {
-		// Only probe nodes that are "enabled" statically.
+	nodes := GlobalRegistry().Snapshot(time.Now(), true)
+	for _, n := range nodes {
+		// Only probe nodes that are "enabled".
 		if !n.Healthy {
 			continue
 		}
@@ -83,6 +84,7 @@ func probeNode(n NodeInfo) {
 			LastChecked: time.Now(),
 			LastError:   "parse api url: " + err.Error(),
 		})
+		GlobalRegistry().ApplyHealth(n.ID, false, 0, err, time.Now())
 		return
 	}
 
@@ -104,6 +106,7 @@ func probeNode(n NodeInfo) {
 	}
 
 	setHealth(n.ID, h)
+	GlobalRegistry().ApplyHealth(n.ID, h.Healthy, latency, err, h.LastChecked)
 
 	if os.Getenv("MEERKAT_DEBUG_DISCOVERY") == "1" {
 		log.Printf("[discovery] probe %s (%s): healthy=%v latency=%dms err=%v\n",

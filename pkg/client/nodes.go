@@ -1,3 +1,8 @@
+// NOTE: NodeOffer / FetchNodeOffers are placeholders for a future marketplace
+// layer (multi-pool, on-chain price discovery, etc.). They are not used in
+// the current MVP flow and can be ignored for now.
+
+
 package client
 
 import "context"

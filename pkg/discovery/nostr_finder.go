@@ -1,4 +1,11 @@
 // pkg/discovery/nostr_finder.go
+
+// NOTE: In the current architecture we treat nostrFinder primarily as a
+// "feeder" for the global Registry. The Finder interface methods are kept
+// for future use, but all production reads go through the Registry-backed
+// default finder (see discovery.SetDefaultFinder in cmd/client-cli/nodes_env.go).
+
+
 package discovery
 
 import (
@@ -18,10 +25,8 @@ type nostrFinder struct {
 	relays  []string
 	poolPub string
 
-	fallback Finder
-
-	mu    sync.RWMutex
-	nodes map[string]*NodeInfo
+	fallback Finder    // keep this for now
+	registry *Registry // shared view
 
 	startOnce sync.Once
 }
@@ -36,7 +41,7 @@ func NewNostrFinder(relays []string, poolPubKey string, fallback Finder) Finder 
 		relays:   relays,
 		poolPub:  poolPubKey,
 		fallback: fallback,
-		nodes:    make(map[string]*NodeInfo),
+		registry: GlobalRegistry(),
 	}
 }
 
@@ -109,15 +114,7 @@ func (f *nostrFinder) updateFromEvent(ev *nostr.Event) {
 		return
 	}
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	node, exists := f.nodes[a.ID]
-	if exists {
-		node.ApplyAnnouncement(*a, now, DefaultAnnouncementTTL)
-	} else {
-		f.nodes[a.ID] = NewNodeFromAnnouncement(*a, "nostr", now, DefaultAnnouncementTTL)
-	}
+	f.registry.UpsertAnnouncement(*a, "nostr", now, DefaultAnnouncementTTL)
 }
 
 // Finder implementation ///////////////////////////////////////////////////////
@@ -132,16 +129,8 @@ func (f *nostrFinder) FindNode(
 
 	_ = poolPubKey // may be used later to filter by pool
 
-	// Take a snapshot of current nodes, filtering out expired ones.
 	now := time.Now()
-	f.mu.RLock()
-	slice := make([]NodeInfo, 0, len(f.nodes))
-	for _, n := range f.nodes {
-		if !n.IsExpired(now) {
-			slice = append(slice, *n)
-		}
-	}
-	f.mu.RUnlock()
+	slice := f.registry.Snapshot(now, true)
 
 	if len(slice) == 0 {
 		// No Nostr nodes yet; fall back to staticFinder
@@ -156,14 +145,7 @@ func (f *nostrFinder) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 	f.ensureStarted()
 
 	now := time.Now()
-	f.mu.RLock()
-	slice := make([]NodeInfo, 0, len(f.nodes))
-	for _, n := range f.nodes {
-		if !n.IsExpired(now) {
-			slice = append(slice, *n)
-		}
-	}
-	f.mu.RUnlock()
+	slice := f.registry.Snapshot(now, false)
 
 	if len(slice) == 0 {
 		return f.fallback.ListNodes(ctx)

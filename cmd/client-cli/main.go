@@ -1,24 +1,25 @@
 package main
 
 import (
-    "bytes"
-    "bufio"
-    "context"
-    "encoding/json"
-    "fmt"
-    "io"
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"io/fs"
-    "log"
-    "net/http"
-    "os"
-    "path/filepath"
-    "runtime"
-    "strings"
-    "time"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
 
-    "github.com/MakerMaker19/meerkatvpn/pkg/client"
-    "github.com/MakerMaker19/meerkatvpn/pkg/discovery"
-    "github.com/MakerMaker19/meerkatvpn/pkg/vpn"
+	"github.com/MakerMaker19/meerkatvpn/pkg/client"
+	"github.com/MakerMaker19/meerkatvpn/pkg/discovery"
+	"github.com/MakerMaker19/meerkatvpn/pkg/nostrutil"
+	"github.com/MakerMaker19/meerkatvpn/pkg/vpn"
 )
 
 func init() {
@@ -26,7 +27,6 @@ func init() {
 	// Safe to call multiple times; discovery package guards it.
 	discovery.StartBackgroundHealthProbe(30 * time.Second)
 }
-
 
 func main() {
 	if len(os.Args) < 2 {
@@ -45,15 +45,15 @@ func main() {
 		if err := cmdListTokens(); err != nil {
 			log.Fatal(err)
 		}
-	case "list-nodes": 
-    	if err := cmdListNodes(); err != nil {
-     		log.Fatal(err)
-    	}
+	case "list-nodes":
+		if err := cmdListNodes(); err != nil {
+			log.Fatal(err)
+		}
 	case "connect":
 		if err := cmdConnect(); err != nil {
 			log.Fatal(err)
 		}
-	case "watch-nodes":       
+	case "watch-nodes":
 		if err := cmdWatchNodes(); err != nil {
 			log.Fatal(err)
 		}
@@ -65,15 +65,14 @@ func main() {
 }
 
 func printUsage() {
-    fmt.Println("MeerkatVPN client CLI")
-    fmt.Println()
-    fmt.Println("Usage:")
-    fmt.Println("  meerkat-client receive-tokens   # connect to Nostr relays and store subscription tokens")
-    fmt.Println("  meerkat-client list-tokens      # list stored subscription tokens")
-    fmt.Println("  meerkat-client list-nodes       # list known Meerkat nodes via discovery")
-    fmt.Println("  meerkat-client connect          # use latest valid token to request a session from a node")
+	fmt.Println("MeerkatVPN client CLI")
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  meerkat-client receive-tokens   # connect to Nostr relays and store subscription tokens")
+	fmt.Println("  meerkat-client list-tokens      # list stored subscription tokens")
+	fmt.Println("  meerkat-client list-nodes       # list known Meerkat nodes via discovery")
+	fmt.Println("  meerkat-client connect          # use latest valid token to request a session from a node")
 }
-
 
 func cmdReceiveTokens() error {
 	ctx := context.Background()
@@ -104,139 +103,139 @@ func cmdListTokens() error {
 }
 
 func cmdListNodes() error {
-    ctx := context.Background()
+	ctx := context.Background()
 
-    nodes, err := discovery.ListNodes(ctx)
-    if err != nil {
-        return fmt.Errorf("list nodes: %w", err)
-    }
+	nodes, err := discovery.ListNodes(ctx)
+	if err != nil {
+		return fmt.Errorf("list nodes: %w", err)
+	}
 
-    if len(nodes) == 0 {
-        fmt.Println("No nodes known via discovery.")
-        return nil
-    }
+	if len(nodes) == 0 {
+		fmt.Println("No nodes known via discovery.")
+		return nil
+	}
 
-    fmt.Println("Known Meerkat nodes (via discovery):")
-    for _, n := range nodes {
-        backends := strings.Join(n.Backends, ",")
-        if backends == "" {
-            backends = "(none)"
-        }
-        fmt.Printf(
-            "- id=%s | api=%s | region=%s | country=%s | city=%s | backends=%s | healthy=%v\n",
-            n.ID, n.APIURL, n.Region, n.Country, n.City, backends, n.Healthy,
-        )
-    }
+	fmt.Println("Known Meerkat nodes (via discovery):")
+	for _, n := range nodes {
+		backends := strings.Join(n.Backends, ",")
+		if backends == "" {
+			backends = "(none)"
+		}
+		fmt.Printf(
+			"- id=%s | api=%s | region=%s | country=%s | city=%s | backends=%s | healthy=%v\n",
+			n.ID, n.APIURL, n.Region, n.Country, n.City, backends, n.Healthy,
+		)
+	}
 
-    return nil
+	return nil
 }
 
 func promptBackend() string {
-    // If env var is set, respect it and don't prompt.
-    if env := os.Getenv("MEERKAT_TUNNEL_BACKEND"); env != "" {
-        log.Printf("MEERKAT_TUNNEL_BACKEND=%s (no prompt)\n", env)
-        return strings.ToLower(env)
-    }
+	// If env var is set, respect it and don't prompt.
+	if env := os.Getenv("MEERKAT_TUNNEL_BACKEND"); env != "" {
+		log.Printf("MEERKAT_TUNNEL_BACKEND=%s (no prompt)\n", env)
+		return strings.ToLower(env)
+	}
 
-    reader := bufio.NewReader(os.Stdin)
+	reader := bufio.NewReader(os.Stdin)
 
-    fmt.Println("Select tunnel backend:")
-    fmt.Println("  1) OpenVPN   (stable, working now)")
-    fmt.Println("  2) WireGuard (experimental; server config must be correct)")
-    fmt.Print("Enter choice [1]: ")
+	fmt.Println("Select tunnel backend:")
+	fmt.Println("  1) OpenVPN   (stable, working now)")
+	fmt.Println("  2) WireGuard (experimental; server config must be correct)")
+	fmt.Print("Enter choice [1]: ")
 
-    line, _ := reader.ReadString('\n')
-    choice := strings.TrimSpace(strings.ToLower(line))
+	line, _ := reader.ReadString('\n')
+	choice := strings.TrimSpace(strings.ToLower(line))
 
-    switch choice {
-    case "", "1", "openvpn", "ovpn":
-        return "openvpn"
-    case "2", "wireguard", "wg":
-        return "wireguard"
-    default:
-        fmt.Println("Unrecognized choice, defaulting to OpenVPN.")
-        return "openvpn"
-    }
+	switch choice {
+	case "", "1", "openvpn", "ovpn":
+		return "openvpn"
+	case "2", "wireguard", "wg":
+		return "wireguard"
+	default:
+		fmt.Println("Unrecognized choice, defaulting to OpenVPN.")
+		return "openvpn"
+	}
 }
 
 // copyOVPNToOpenVPNConfigDir tries to copy the generated profile into
 // the OpenVPN GUI config directory on Windows, overwriting any existing
 // "meerkat.ovpn" it finds (even in subfolders).
 func copyOVPNToOpenVPNConfigDir(srcPath string) {
-    if runtime.GOOS != "windows" {
-        return
-    }
+	if runtime.GOOS != "windows" {
+		return
+	}
 
-    // Read source once
-    data, err := os.ReadFile(srcPath)
-    if err != nil {
-        log.Printf("copyOVPNToOpenVPNConfigDir: read %s: %v\n", srcPath, err)
-        return
-    }
+	// Read source once
+	data, err := os.ReadFile(srcPath)
+	if err != nil {
+		log.Printf("copyOVPNToOpenVPNConfigDir: read %s: %v\n", srcPath, err)
+		return
+	}
 
-    // 🔹 Highest priority: explicit full profile path (for power users)
-    if profilePath := os.Getenv("MEERKAT_OPENVPN_PROFILE_PATH"); profilePath != "" {
-        if err := os.WriteFile(profilePath, data, 0o600); err != nil {
-            log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", profilePath, err)
-            return
-        }
-        log.Printf("Copied %s to explicit OpenVPN profile path: %s\n", srcPath, profilePath)
-        return
-    }
+	// Highest priority: explicit full profile path (for power users)
+	if profilePath := os.Getenv("MEERKAT_OPENVPN_PROFILE_PATH"); profilePath != "" {
+		if err := os.WriteFile(profilePath, data, 0o600); err != nil {
+			log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", profilePath, err)
+			return
+		}
+		log.Printf("Copied %s to explicit OpenVPN profile path: %s\n", srcPath, profilePath)
+		return
+	}
 
-    // 🔹 Detect base config directory
-    destDir := os.Getenv("MEERKAT_OPENVPN_CONFIG_DIR")
+	// Detect base config directory
+	destDir := os.Getenv("MEERKAT_OPENVPN_CONFIG_DIR")
 
-    if destDir == "" {
-        if home, err := os.UserHomeDir(); err == nil {
-            candidate := filepath.Join(home, "OpenVPN", "config")
-            if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
-                destDir = candidate
-            }
-        }
-    }
+	if destDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			candidate := filepath.Join(home, "OpenVPN", "config")
+			if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
+				destDir = candidate
+			}
+		}
+	}
 
-    if destDir == "" {
-        if pf := os.Getenv("ProgramFiles"); pf != "" {
-            candidate := filepath.Join(pf, "OpenVPN", "config")
-            if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
-                destDir = candidate
-            }
-        }
-    }
+	if destDir == "" {
+		if pf := os.Getenv("ProgramFiles"); pf != "" {
+			candidate := filepath.Join(pf, "OpenVPN", "config")
+			if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
+				destDir = candidate
+			}
+		}
+	}
 
-    if destDir == "" {
-        log.Println("OpenVPN config dir not found; set MEERKAT_OPENVPN_CONFIG_DIR or MEERKAT_OPENVPN_PROFILE_PATH to enable auto-import")
-        return
-    }
+	if destDir == "" {
+		log.Println("OpenVPN config dir not found; set MEERKAT_OPENVPN_CONFIG_DIR or MEERKAT_OPENVPN_PROFILE_PATH to enable auto-import")
+		return
+	}
 
-    // 🔹 Search recursively for any existing "meerkat.ovpn"
-    var destPath string
-    _ = filepath.WalkDir(destDir, func(path string, d fs.DirEntry, err error) error {
-        if err != nil {
-            return nil
-        }
-        if d.IsDir() {
-            return nil
-        }
-        if strings.EqualFold(d.Name(), "meerkat.ovpn") {
-            destPath = path
-        }
-        return nil
-    })
+	// Search recursively for any existing "meerkat.ovpn"
+	var destPath string
+	_ = filepath.WalkDir(destDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if strings.EqualFold(d.Name(), "meerkat.ovpn") {
+			destPath = path
+		}
+		return nil
+	})
 
-    // If we found an existing meerkat.ovpn anywhere under config/, overwrite it.
-    if destPath == "" {
-        // No existing file? Create one in the root config dir.
-        destPath = filepath.Join(destDir, "meerkat.ovpn")
-    }
+	// If we found an existing meerkat.ovpn anywhere under config/, overwrite it.
+	if destPath == "" {
+		// No existing file? Create one in the root config dir.
+		destPath = filepath.Join(destDir, "meerkat.ovpn")
+	}
 
-    if err := os.WriteFile(destPath, data, 0o600); err != nil {
-        log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", destPath, err)
-        return
-    }
+	if err := os.WriteFile(destPath, data, 0o600); err != nil {
+		log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", destPath, err)
+		return
+	}
 
-    log.Printf("Copied %s to OpenVPN config profile: %s\n", srcPath, destPath)
+	log.Printf("Copied %s to OpenVPN config profile: %s\n", srcPath, destPath)
 }
 
 // cmdConnect:
@@ -251,9 +250,20 @@ func cmdConnect() error {
 	backend := promptBackend()
 	log.Printf("Using backend=%s\n", backend)
 
-	poolPub := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
-	if poolPub == "" {
-		return fmt.Errorf("MEERKAT_CLIENT_POOL_PUBKEY not set")
+	// Pool pubkey: env -> config -> error.
+	poolRaw := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
+	if poolRaw == "" {
+		if cfg := client.Config(); cfg != nil && cfg.PoolPubKey != "" {
+			poolRaw = cfg.PoolPubKey
+		}
+	}
+	if poolRaw == "" {
+		return fmt.Errorf("MEERKAT_CLIENT_POOL_PUBKEY not set and no pool_pubkey in meerkat-client.yaml")
+	}
+
+	poolPub, err := nostrutil.ParsePubKey(poolRaw)
+	if err != nil {
+		return fmt.Errorf("failed to parse pool pubkey (%q): %w", poolRaw, err)
 	}
 
 	// Node selection
@@ -261,20 +271,24 @@ func cmdConnect() error {
 	if nodeURL != "" {
 		log.Printf("Using node URL from MEERKAT_NODE_URL=%s\n", nodeURL)
 	} else {
-		preferredRegion := os.Getenv("MEERKAT_PREFERRED_REGION")
-		if preferredRegion == "" {
-			preferredRegion = "auto"
+		// Region: env -> config -> "auto".
+		region := os.Getenv("MEERKAT_PREFERRED_REGION")
+		if region == "" {
+			if cfg := client.Config(); cfg != nil {
+				region = cfg.PreferredRegion
+			}
+		}
+		if region == "" {
+			region = "auto"
 		}
 
-		node, err := discovery.FindNode(ctx, poolPub, preferredRegion, backend)
+		node, err := discovery.FindNode(ctx, poolPub, region, backend)
 		if err != nil {
 			return fmt.Errorf("no suitable node found via discovery: %w", err)
 		}
 
 		nodeURL = node.APIURL
-
-		log.Printf("Selected node %s (%s) via discovery\n",
-			node.ID, node.Region)
+		log.Printf("Selected node %s (%s) via discovery\n", node.ID, node.APIURL)
 	}
 
 	// - load token store
@@ -299,8 +313,8 @@ func cmdConnect() error {
 	// Build request including backend
 	reqBody := struct {
 		Token          vpn.SubscriptionToken `json:"token"`
-		ClientWGPubKey string               `json:"client_wg_pubkey"`
-		Backend        string               `json:"backend"` // "wireguard" or "openvpn"
+		ClientWGPubKey string                `json:"client_wg_pubkey"`
+		Backend        string                `json:"backend"` // "wireguard" or "openvpn"
 	}{
 		Token:          *tok,
 		ClientWGPubKey: wgKeys.Public,
@@ -356,7 +370,7 @@ func cmdConnect() error {
 		if err := os.WriteFile(path, []byte(sr.OVPNProfile), 0o600); err != nil {
 			return fmt.Errorf("write %s: %w", path, err)
 		}
-    	
+
 		copyOVPNToOpenVPNConfigDir(path)
 
 		fmt.Println("Node accepted session:")
