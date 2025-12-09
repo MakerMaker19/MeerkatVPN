@@ -154,7 +154,9 @@ func filterByBackend(nodes []NodeInfo, backend string) []NodeInfo {
 
 	var out []NodeInfo
 	for _, n := range nodes {
-		if !n.Healthy {
+		// Treat nodes with no health check yet as "unknown" and allow them.
+		// Only exclude nodes that are explicitly marked unhealthy.
+		if !n.Healthy && !n.LastHealthCheck.IsZero() {
 			continue
 		}
 		if backend == "" {
