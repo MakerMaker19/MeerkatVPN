@@ -31,8 +31,6 @@ var defaultRelays = []string{
     "wss://relay.damus.io",
     "wss://relay.primal.net",
     "wss://nos.lol",
-    "wss://nostr.wine",
-    "wss://relay.current.fyi",
 }
 
 func DefaultRelays() []string {

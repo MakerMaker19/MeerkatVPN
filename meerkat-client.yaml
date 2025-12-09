@@ -2,23 +2,20 @@
 # Config for the Meerkat client CLI.
 # Env vars override these values.
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Nostr identity & pool
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 # Your Nostr private key (client identity). Accepts nsec or 64-char hex.
-nostr_privkey: "nsec1clientprivkeygoeshere...."
+nostr_privkey: "2f919a8ded33fe98fb99a8ae5e81191f9f1144a54fcf654c33753afe940d6f32"
 
 # Pool pubkey we trust to issue subscription tokens. Accepts npub or hex.
-pool_pubkey: "npub1poolpubkeygoeshere...."
+pool_pubkey:   "4cb03ad56b84dc22f4870a9a7412412bebce44d3ce7bf3233513478aaac31aaa"
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Relays (discovery + tokens)
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
-# Relays used for receiving subscription tokens (DMs) and subscribing to node
-# announcements. If this list is empty and no env is set, code falls back to
-# these same defaults.
 relays:
   - "wss://relay.damus.io"
   - "wss://relay.primal.net"
@@ -26,9 +23,9 @@ relays:
   - "wss://nostr.wine"
   - "wss://relay.current.fyi"
 
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 # Node selection preferences
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------
 
 # Preferred region when auto-selecting a node. Leave empty to mean "auto".
 preferred_region: ""
@@ -38,6 +35,6 @@ preferred_region: ""
 backend: "openvpn"
 
 # Optional: hard-coded node URL override. If non-empty, discovery is skipped.
-# Example: "http://203.0.113.42:9090"
+# We keep this blank so discovery is used.
 node_url: ""
 
