@@ -9,10 +9,13 @@ import (
 	"io"
 	"io/fs"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -158,35 +161,29 @@ func promptBackend() string {
 	}
 }
 
-// copyOVPNToOpenVPNConfigDir tries to copy the generated profile into
-// the OpenVPN GUI config directory on Windows, overwriting any existing
-// "meerkat.ovpn" it finds (even in subfolders).
-func copyOVPNToOpenVPNConfigDir(srcPath string) {
-	if runtime.GOOS != "windows" {
-		return
-	}
-
-	// Read source once
-	data, err := os.ReadFile(srcPath)
-	if err != nil {
-		log.Printf("copyOVPNToOpenVPNConfigDir: read %s: %v\n", srcPath, err)
-		return
+// writeOpenVPNProfile writes the given profile bytes directly into the OpenVPN
+// config directory (or explicit profile path), overwriting any existing file.
+// It never writes into the current working directory.
+func writeOpenVPNProfile(data []byte) (string, error) {
+	if len(data) == 0 {
+		return "", fmt.Errorf("empty OpenVPN profile")
 	}
 
 	// Highest priority: explicit full profile path (for power users)
 	if profilePath := os.Getenv("MEERKAT_OPENVPN_PROFILE_PATH"); profilePath != "" {
-		if err := os.WriteFile(profilePath, data, 0o600); err != nil {
-			log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", profilePath, err)
-			return
+		if err := os.MkdirAll(filepath.Dir(profilePath), 0o755); err != nil {
+			return "", fmt.Errorf("ensure dir for %s: %w", profilePath, err)
 		}
-		log.Printf("Copied %s to explicit OpenVPN profile path: %s\n", srcPath, profilePath)
-		return
+		if err := os.WriteFile(profilePath, data, 0o600); err != nil {
+			return "", fmt.Errorf("write %s: %w", profilePath, err)
+		}
+		return profilePath, nil
 	}
 
 	// Detect base config directory
 	destDir := os.Getenv("MEERKAT_OPENVPN_CONFIG_DIR")
 
-	if destDir == "" {
+	if destDir == "" && runtime.GOOS == "windows" {
 		if home, err := os.UserHomeDir(); err == nil {
 			candidate := filepath.Join(home, "OpenVPN", "config")
 			if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
@@ -195,7 +192,7 @@ func copyOVPNToOpenVPNConfigDir(srcPath string) {
 		}
 	}
 
-	if destDir == "" {
+	if destDir == "" && runtime.GOOS == "windows" {
 		if pf := os.Getenv("ProgramFiles"); pf != "" {
 			candidate := filepath.Join(pf, "OpenVPN", "config")
 			if st, err2 := os.Stat(candidate); err2 == nil && st.IsDir() {
@@ -205,8 +202,7 @@ func copyOVPNToOpenVPNConfigDir(srcPath string) {
 	}
 
 	if destDir == "" {
-		log.Println("OpenVPN config dir not found; set MEERKAT_OPENVPN_CONFIG_DIR or MEERKAT_OPENVPN_PROFILE_PATH to enable auto-import")
-		return
+		return "", fmt.Errorf("OpenVPN config dir not found; set MEERKAT_OPENVPN_PROFILE_PATH or MEERKAT_OPENVPN_CONFIG_DIR")
 	}
 
 	// Search recursively for any existing "meerkat.ovpn"
@@ -230,12 +226,176 @@ func copyOVPNToOpenVPNConfigDir(srcPath string) {
 		destPath = filepath.Join(destDir, "meerkat.ovpn")
 	}
 
-	if err := os.WriteFile(destPath, data, 0o600); err != nil {
-		log.Printf("copyOVPNToOpenVPNConfigDir: write %s: %v\n", destPath, err)
-		return
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return "", fmt.Errorf("ensure dir for %s: %w", destPath, err)
 	}
 
-	log.Printf("Copied %s to OpenVPN config profile: %s\n", srcPath, destPath)
+	if err := os.WriteFile(destPath, data, 0o600); err != nil {
+		return "", fmt.Errorf("write %s: %w", destPath, err)
+	}
+
+	return destPath, nil
+}
+
+// chooseNodeInteractively lists eligible nodes (backend support, non-expired)
+// ranked by health/latency and region match, then prompts the user to pick one.
+func chooseNodeInteractively(ctx context.Context, poolPubKey string, preferredRegion string, backend string) (*discovery.NodeInfo, error) {
+	all, err := discovery.ListNodes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list nodes: %w", err)
+	}
+
+	eligible := filterNodesForBackend(all, backend, poolPubKey)
+	if len(eligible) == 0 {
+		return nil, fmt.Errorf("no suitable node found via discovery for backend=%s", backend)
+	}
+
+	ranked := rankNodes(eligible, preferredRegion)
+
+	fmt.Println("Discovered nodes:")
+	for i, n := range ranked {
+		health := "unknown"
+		if n.Healthy {
+			health = "healthy"
+		} else if !n.LastHealthCheck.IsZero() {
+			health = "unhealthy"
+		}
+
+		lat := "-"
+		if n.LastLatency > 0 {
+			lat = n.LastLatency.String()
+		}
+
+		region := n.Region
+		if region == "" {
+			region = "(none)"
+		}
+
+		fmt.Printf("  [%d] id=%s | region=%s | api=%s | backends=%s | health=%s | latency=%s\n",
+			i+1,
+			n.ID,
+			region,
+			n.APIURL,
+			strings.Join(n.Backends, ","),
+			health,
+			lat,
+		)
+	}
+
+	fmt.Print("Select node [1]: ")
+	reader := bufio.NewReader(os.Stdin)
+	line, _ := reader.ReadString('\n')
+	choice := strings.TrimSpace(line)
+	if choice == "" {
+		return &ranked[0], nil
+	}
+
+	idx, err := strconv.Atoi(choice)
+	if err != nil || idx < 1 || idx > len(ranked) {
+		return nil, fmt.Errorf("invalid selection")
+	}
+
+	return &ranked[idx-1], nil
+}
+
+// filterNodesForBackend keeps nodes that support the backend, are not expired,
+// and are either healthy or not yet probed. If PoolPubKey is set on a node,
+// it must match the requested pool (when provided).
+func filterNodesForBackend(nodes []discovery.NodeInfo, backend string, poolPubKey string) []discovery.NodeInfo {
+	backend = strings.ToLower(strings.TrimSpace(backend))
+	poolPubKey = strings.TrimSpace(poolPubKey)
+
+	var out []discovery.NodeInfo
+	for _, n := range nodes {
+		if poolPubKey != "" && n.PoolPubKey != "" && !strings.EqualFold(n.PoolPubKey, poolPubKey) {
+			continue
+		}
+
+		// Keep nodes that are healthy or not yet probed; drop explicit unhealthy.
+		if !n.Healthy && !n.LastHealthCheck.IsZero() {
+			continue
+		}
+
+		if backend == "" {
+			out = append(out, n)
+			continue
+		}
+
+		for _, b := range n.Backends {
+			if strings.EqualFold(b, backend) {
+				out = append(out, n)
+				break
+			}
+		}
+	}
+	return out
+}
+
+// rankNodes sorts nodes by (1) region match, (2) healthy over unknown,
+// (3) lower latency, (4) original order.
+func rankNodes(nodes []discovery.NodeInfo, preferredRegion string) []discovery.NodeInfo {
+	out := make([]discovery.NodeInfo, len(nodes))
+	copy(out, nodes)
+
+	preferredRegion = strings.ToLower(strings.TrimSpace(preferredRegion))
+
+	type withIndex struct {
+		Node discovery.NodeInfo
+		Idx  int
+	}
+
+	wrapped := make([]withIndex, len(out))
+	for i, n := range out {
+		wrapped[i] = withIndex{Node: n, Idx: i}
+	}
+
+	sort.SliceStable(wrapped, func(i, j int) bool {
+		a := wrapped[i].Node
+		b := wrapped[j].Node
+
+		regionMatchA := preferredRegion != "" && preferredRegion != "auto" && strings.EqualFold(a.Region, preferredRegion)
+		regionMatchB := preferredRegion != "" && preferredRegion != "auto" && strings.EqualFold(b.Region, preferredRegion)
+		if regionMatchA != regionMatchB {
+			return regionMatchA
+		}
+
+		healthScore := func(n discovery.NodeInfo) int {
+			switch {
+			case n.Healthy:
+				return 2
+			case n.LastHealthCheck.IsZero():
+				return 1 // unknown
+			default:
+				return 0
+			}
+		}
+
+		ha := healthScore(a)
+		hb := healthScore(b)
+		if ha != hb {
+			return ha > hb
+		}
+
+		latVal := func(n discovery.NodeInfo) time.Duration {
+			if n.LastLatency > 0 {
+				return n.LastLatency
+			}
+			return time.Duration(math.MaxInt64)
+		}
+
+		la := latVal(a)
+		lb := latVal(b)
+		if la != lb {
+			return la < lb
+		}
+
+		return wrapped[i].Idx < wrapped[j].Idx
+	})
+
+	for i, w := range wrapped {
+		out[i] = w.Node
+	}
+	return out
 }
 
 // cmdConnect:
@@ -282,9 +442,9 @@ func cmdConnect() error {
 			region = "auto"
 		}
 
-		node, err := discovery.FindNode(ctx, poolPub, region, backend)
+		node, err := chooseNodeInteractively(ctx, poolPub, region, backend)
 		if err != nil {
-			return fmt.Errorf("no suitable node found via discovery: %w", err)
+			return err
 		}
 
 		nodeURL = node.APIURL
@@ -366,12 +526,10 @@ func cmdConnect() error {
 			return fmt.Errorf("node did not provide ovpn_profile for openvpn backend")
 		}
 
-		path := "meerkat.ovpn"
-		if err := os.WriteFile(path, []byte(sr.OVPNProfile), 0o600); err != nil {
-			return fmt.Errorf("write %s: %w", path, err)
+		path, err := writeOpenVPNProfile([]byte(sr.OVPNProfile))
+		if err != nil {
+			return fmt.Errorf("write OpenVPN profile: %w", err)
 		}
-
-		copyOVPNToOpenVPNConfigDir(path)
 
 		fmt.Println("Node accepted session:")
 		fmt.Println("  status :", sr.Status)
@@ -380,12 +538,7 @@ func cmdConnect() error {
 		fmt.Println("OpenVPN profile written to:")
 		fmt.Println(" ", path)
 		fmt.Println()
-		if runtime.GOOS == "windows" {
-			fmt.Println("Import this file into the OpenVPN GUI and click Connect.")
-		} else {
-			fmt.Println("You can start it with:")
-			fmt.Println("  sudo openvpn --config", path)
-		}
+		fmt.Println("Import this profile into your OpenVPN client and connect.")
 		return nil
 
 	case "wireguard":
