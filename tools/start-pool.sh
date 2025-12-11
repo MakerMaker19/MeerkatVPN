@@ -14,6 +14,11 @@ if [ -z "${MEERKAT_POOL_NOSTR_PRIVKEY:-}" ]; then
   exit 1
 fi
 
+# Allow falling back to the shared relay list if a pool-specific one isn't set.
+if [ -z "${MEERKAT_POOL_RELAYS:-}" ] && [ -n "${MEERKAT_NOSTR_RELAYS:-}" ]; then
+  MEERKAT_POOL_RELAYS="$MEERKAT_NOSTR_RELAYS"
+fi
+
 if [ -z "${MEERKAT_POOL_RELAYS:-}" ]; then
   echo "MEERKAT_POOL_RELAYS is required. Aborting." >&2
   exit 1

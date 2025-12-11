@@ -37,12 +37,16 @@ func NewNostrFinder(relays []string, poolPubKey string, fallback Finder) Finder 
 	if fallback == nil {
 		fallback = NewStaticFinder()
 	}
-	return &nostrFinder{
+	f := &nostrFinder{
 		relays:   relays,
 		poolPub:  poolPubKey,
 		fallback: fallback,
 		registry: GlobalRegistry(),
 	}
+	// Start the Nostr subscription immediately so announcements feed the registry
+	// even if callers only use the registry-backed finder.
+	f.ensureStarted()
+	return f
 }
 
 func (f *nostrFinder) ensureStarted() {
