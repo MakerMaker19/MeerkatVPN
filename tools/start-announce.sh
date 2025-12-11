@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # Load secrets (never committed)
-source "$(dirname "$0")/env.local"
+source "$SCRIPT_DIR/env.local"
 
 echo "Starting Meerkat Node Announcer (Discovery)..."
 
@@ -53,5 +56,5 @@ fi
 # ===== RE-ANNOUNCE EVERY 60s =====
 export MEERKAT_NODE_ANNOUNCE_INTERVAL_SECS="60"
 
-cd /root/meerkatvpn/meerkatvpn
+cd "$REPO_ROOT"
 go run ./cmd/node-announce

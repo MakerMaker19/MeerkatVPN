@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # Load secrets (never committed)
-source "$(dirname "$0")/env.local"
+source "$SCRIPT_DIR/env.local"
 
 echo "Starting Meerkat Pool..."
 
@@ -15,5 +18,5 @@ export MEERKAT_POOL_WEEKLY_SATS="1500"
 export MEERKAT_POOL_MONTHLY_SATS="5000"
 export MEERKAT_POOL_YEARLY_SATS="45000"
 
-cd ~/onedrive/Desktop/MeerkatVPN/meerkatvpn
+cd "$REPO_ROOT"
 go run ./cmd/poold
