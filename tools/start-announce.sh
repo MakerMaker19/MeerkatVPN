@@ -7,7 +7,10 @@ source "$(dirname "$0")/env.local"
 echo "Starting Meerkat Node Announcer (Discovery)..."
 
 # ===== HARD ENFORCED IDENTITY =====
-export MEERKAT_NODE_NSEC="ce2903ed9ae571d7f706b35540ef917231099d27b3992f0a8b4536e71e61401e"
+if [ -z "${MEERKAT_NODE_NSEC:-}" ]; then
+  echo "MEERKAT_NODE_NSEC is required. Aborting." >&2
+  exit 1
+fi
 
 # ===== PUBLIC API =====
 # If MEERKAT_NODE_IP is not set (env/local), prompt for it interactively.
@@ -23,10 +26,16 @@ fi
 export MEERKAT_NODE_API_URL="http://${MEERKAT_NODE_IP}:9090"
 
 # ===== POOL WE SERVE =====
-export MEERKAT_POOL_PUBKEY="4cb03ad56b84dc22f4870a9a7412412bebce44d3ce7bf3233513478aaac31aaa"
+if [ -z "${MEERKAT_POOL_PUBKEY:-}" ]; then
+  echo "MEERKAT_POOL_PUBKEY is required. Aborting." >&2
+  exit 1
+fi
 
 # ===== RELAYS (ONLY WORKING ONES) =====
-export MEERKAT_NOSTR_RELAYS="wss://relay.damus.io,wss://relay.primal.net,wss://nos.lol"
+if [ -z "${MEERKAT_NOSTR_RELAYS:-}" ]; then
+  echo "MEERKAT_NOSTR_RELAYS is required. Aborting." >&2
+  exit 1
+fi
 
 # ===== NODE METADATA =====
 export MEERKAT_NODE_REGION="us-east-1"
@@ -37,7 +46,9 @@ export MEERKAT_NODE_SCHEMA="1"
 export MEERKAT_NODE_WEIGHT="1.0"
 
 # ===== BACKEND ADVERTISEMENT =====
-export MEERKAT_NODE_BACKENDS="openvpn"
+if [ -z "${MEERKAT_NODE_BACKENDS:-}" ]; then
+  export MEERKAT_NODE_BACKENDS="openvpn"
+fi
 
 # ===== RE-ANNOUNCE EVERY 60s =====
 export MEERKAT_NODE_ANNOUNCE_INTERVAL_SECS="60"
