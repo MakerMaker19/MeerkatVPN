@@ -240,14 +240,25 @@ func writeOpenVPNProfile(data []byte) (string, error) {
 // chooseNodeInteractively lists eligible nodes (backend support, non-expired)
 // ranked by health/latency and region match, then prompts the user to pick one.
 func chooseNodeInteractively(ctx context.Context, poolPubKey string, preferredRegion string, backend string) (*discovery.NodeInfo, error) {
-	all, err := discovery.ListNodes(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list nodes: %w", err)
-	}
+	var eligible []discovery.NodeInfo
 
-	eligible := filterNodesForBackend(all, backend, poolPubKey)
-	if len(eligible) == 0 {
-		return nil, fmt.Errorf("no suitable node found via discovery for backend=%s", backend)
+	// Give discovery a short window to ingest announcements before failing.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		all, err := discovery.ListNodes(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list nodes: %w", err)
+		}
+
+		eligible = filterNodesForBackend(all, backend, poolPubKey)
+		if len(eligible) > 0 {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("no suitable node found via discovery for backend=%s", backend)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	ranked := rankNodes(eligible, preferredRegion)

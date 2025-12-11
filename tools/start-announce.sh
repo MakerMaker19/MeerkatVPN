@@ -11,6 +11,9 @@ echo "Starting Meerkat Node Announcer (Discovery)..."
 
 # ===== HARD ENFORCED IDENTITY =====
 if [ -z "${MEERKAT_NODE_NSEC:-}" ]; then
+  read -rp "Enter MEERKAT_NODE_NSEC (nsec...): " MEERKAT_NODE_NSEC
+fi
+if [ -z "${MEERKAT_NODE_NSEC:-}" ]; then
   echo "MEERKAT_NODE_NSEC is required. Aborting." >&2
   exit 1
 fi

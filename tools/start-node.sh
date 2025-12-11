@@ -22,6 +22,10 @@ if [ -z "${MEERKAT_NODE_ALLOWED_POOL_PUBKEY:-}" ]; then
   fi
 fi
 
+# Start announcer in the background (will prompt for node nsec/IP as needed).
+echo "Starting node announcer in background..."
+"$SCRIPT_DIR/start-announce.sh" &
+
 # ===== RUN =====
 cd "$REPO_ROOT"
 go run ./cmd/noded
