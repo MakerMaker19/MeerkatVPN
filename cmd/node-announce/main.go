@@ -43,6 +43,7 @@ func run() error {
 	apiURL := strings.TrimSpace(os.Getenv("MEERKAT_NODE_API_URL"))
 	poolPubRaw := strings.TrimSpace(os.Getenv("MEERKAT_POOL_PUBKEY"))
 	relaysEnv := strings.TrimSpace(os.Getenv("MEERKAT_NOSTR_RELAYS"))
+	nodeID := strings.TrimSpace(os.Getenv("MEERKAT_NODE_ID"))
 
 	if nsec == "" || apiURL == "" || poolPubRaw == "" || relaysEnv == "" {
 		return fmt.Errorf("MEERKAT_NODE_NSEC, MEERKAT_NODE_API_URL, MEERKAT_POOL_PUBKEY, and MEERKAT_NOSTR_RELAYS must be set")
@@ -118,7 +119,7 @@ func run() error {
 	}
 
 	announceOnce := func() {
-		if err := publishAnnouncement(ctx, pool, relays, skHex, pubKey, poolPub, apiURL, region, country, city, backends, version, schema, weight); err != nil {
+		if err := publishAnnouncement(ctx, pool, relays, skHex, pubKey, poolPub, apiURL, region, country, city, backends, version, schema, weight, nodeID); err != nil {
 			log.Printf("[meerkat-node] error publishing announcement: %v", err)
 		}
 	}
@@ -160,6 +161,7 @@ func publishAnnouncement(
 	version string,
 	schema int,
 	weight float64,
+	nodeID string,
 ) error {
 	now := nostr.Now()
 
@@ -192,6 +194,9 @@ func publishAnnouncement(
 	ev.Tags = append(ev.Tags,
 		nostr.Tag{"pool", poolPub},
 	)
+	if nodeID != "" {
+		ev.Tags = append(ev.Tags, nostr.Tag{"node", nodeID})
+	}
 
 	// Optional tags (mirror what the client expects).
 	if region != "" {
