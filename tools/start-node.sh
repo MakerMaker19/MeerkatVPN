@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-
-#!/usr/bin/env bash
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 # Load secrets (never committed)
-source "$(dirname "$0")/env.local"
+source "$SCRIPT_DIR/env.local"
 
 echo "Starting Meerkat Node API (OpenVPN)..."
 
@@ -14,5 +15,5 @@ export MEERKAT_NODE_ALLOWED_POOL_PUBKEY="4cb03ad56b84dc22f4870a9a7412412bebce44d
 export MEERKAT_NODE_OVPN_PROFILE_PATH="/etc/openvpn/meerkat-client.ovpn"
 
 # ===== RUN =====
-cd /root/meerkatvpn/meerkatvpn
+cd "$REPO_ROOT"
 go run ./cmd/noded
