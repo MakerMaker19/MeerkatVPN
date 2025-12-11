@@ -12,26 +12,7 @@ import (
 
 // staticNodes is a simple, in-memory registry.
 // You can later replace this with Nostr-based discovery or a pool API.
-var staticNodes = []NodeInfo{
-	{
-		ID:       "vps-us-east-1",
-		APIURL:   "http://46.62.204.11:9090",
-		Region:   "us-east-1",
-		Country:  "US",
-		City:     "nyc",
-		Backends: []string{"openvpn"},
-		Healthy:  true,
-	},
-	{
-		ID:       "local-dev",
-		APIURL:   "http://localhost:9090",
-		Region:   "local",
-		Country:  "",
-		City:     "",
-		Backends: []string{"openvpn", "wireguard"},
-		Healthy:  true,
-	},
-}
+var staticNodes = []NodeInfo{}
 
 var staticSeedOnce sync.Once
 

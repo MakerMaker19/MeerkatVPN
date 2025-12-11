@@ -406,6 +406,9 @@ func rankNodes(nodes []discovery.NodeInfo, preferredRegion string) []discovery.N
 func cmdConnect() error {
 	ctx := context.Background()
 
+	// Ensure discovery is wired (Nostr relays + static) before selecting a node.
+	configureFinderFromEnv()
+
 	// Backend selection (OpenVPN vs WireGuard)
 	backend := promptBackend()
 	log.Printf("Using backend=%s\n", backend)
