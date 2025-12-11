@@ -11,8 +11,16 @@ echo "Starting Meerkat Node API (OpenVPN)..."
 
 # ===== HARD ENFORCED ENV =====
 export MEERKAT_NODE_LISTEN_ADDR="0.0.0.0:9090"
-export MEERKAT_NODE_ALLOWED_POOL_PUBKEY="4cb03ad56b84dc22f4870a9a7412412bebce44d3ce7bf3233513478aaac31aaa"
 export MEERKAT_NODE_OVPN_PROFILE_PATH="/etc/openvpn/meerkat-client.ovpn"
+
+if [ -z "${MEERKAT_NODE_ALLOWED_POOL_PUBKEY:-}" ]; then
+  if [ -n "${MEERKAT_POOL_PUBKEY:-}" ]; then
+    export MEERKAT_NODE_ALLOWED_POOL_PUBKEY="$MEERKAT_POOL_PUBKEY"
+  else
+    echo "MEERKAT_NODE_ALLOWED_POOL_PUBKEY (or MEERKAT_POOL_PUBKEY) is required. Aborting." >&2
+    exit 1
+  fi
+fi
 
 # ===== RUN =====
 cd "$REPO_ROOT"
