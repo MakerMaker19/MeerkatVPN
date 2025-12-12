@@ -19,14 +19,14 @@ if [ -z "${MEERKAT_NOSTR_RELAYS:-}" ]; then
   exit 1
 fi
 
-# Prompt for client Nostr privkey if not set.
-if [ -z "${MEERKAT_CLIENT_NOSTR_PRIVKEY:-}" ]; then
-  read -rp "Enter MEERKAT_CLIENT_NOSTR_PRIVKEY (nsec...): " MEERKAT_CLIENT_NOSTR_PRIVKEY
-fi
+# Force prompt for client Nostr privkey every run.
+unset MEERKAT_CLIENT_NOSTR_PRIVKEY
+read -rp "Enter MEERKAT_CLIENT_NOSTR_PRIVKEY (nsec...): " MEERKAT_CLIENT_NOSTR_PRIVKEY
 if [ -z "${MEERKAT_CLIENT_NOSTR_PRIVKEY:-}" ]; then
   echo "MEERKAT_CLIENT_NOSTR_PRIVKEY is required. Aborting." >&2
   exit 1
 fi
+export MEERKAT_CLIENT_NOSTR_PRIVKEY
 
 # Use the repo-local client YAML (kills the hidden AppData config)
 export MEERKAT_CLIENT_CONFIG="$REPO_ROOT/meerkat-client.yaml"
