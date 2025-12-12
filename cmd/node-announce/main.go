@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -163,6 +164,11 @@ func publishAnnouncement(
 	weight float64,
 	nodeID string,
 ) error {
+	// Basic liveness check against the node API; skip announce if unreachable.
+	if !apiReachable(apiURL) {
+		return fmt.Errorf("api unreachable: %s", apiURL)
+	}
+
 	now := nostr.Now()
 
 	payload := nodeAnnouncementPayload{
@@ -243,6 +249,27 @@ func publishAnnouncement(
 	}
 
 	return nil
+}
+
+// apiReachable performs a quick HTTP GET against /health (or base URL) with a short timeout.
+// Any HTTP response (even 404) counts as reachable; network errors/timeouts count as unreachable.
+func apiReachable(apiURL string) bool {
+	client := &http.Client{
+		Timeout: 2 * time.Second,
+	}
+	url := strings.TrimRight(apiURL, "/") + "/health"
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return true
 }
 
 func splitList(s string) []string {

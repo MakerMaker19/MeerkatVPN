@@ -24,4 +24,12 @@ fi
 
 # ===== RUN =====
 cd "$REPO_ROOT"
-go run ./cmd/noded
+
+# Start node API in background so announcer can run in foreground (logs visible).
+go run ./cmd/noded &
+NODE_PID=$!
+echo "Node API started with PID ${NODE_PID}"
+trap 'kill ${NODE_PID} 2>/dev/null || true' EXIT
+
+# Run announcer in foreground (handles nsec/IP prompts).
+"$SCRIPT_DIR/start-announce.sh"
