@@ -44,5 +44,6 @@ func (f *registryFinder) FindNode(
 func (f *registryFinder) ListNodes(ctx context.Context) ([]NodeInfo, error) {
 	_ = ctx
 	now := time.Now()
-	return f.registry.Snapshot(now, false), nil
+	// Exclude expired announcements so stale nodes drop out automatically.
+	return f.registry.Snapshot(now, true), nil
 }
