@@ -21,11 +21,36 @@ if [ -z "${MEERKAT_NODE_ALLOWED_POOL_PUBKEY:-}" ]; then
     exit 1
   fi
 fi
+# Prompt for node Nostr keypair and public IP/DNS if not set.
+if [ -z "${MEERKAT_NODE_NSEC:-}" ]; then
+  read -rp "Enter MEERKAT_NODE_NSEC (nsec...): " MEERKAT_NODE_NSEC
+fi
+if [ -z "${MEERKAT_NODE_NSEC:-}" ]; then
+  echo "MEERKAT_NODE_NSEC is required. Aborting." >&2
+  exit 1
+fi
 
-# Start announcer in the background (will prompt for node nsec/IP as needed).
-echo "Starting node announcer in background..."
-"$SCRIPT_DIR/start-announce.sh" &
+if [ -z "${MEERKAT_NODE_IP:-}" ]; then
+  read -rp "Enter public IP or DNS for this node (reachable by clients): " MEERKAT_NODE_IP
+fi
+if [ -z "${MEERKAT_NODE_IP:-}" ]; then
+  echo "MEERKAT_NODE_IP is required. Aborting." >&2
+  exit 1
+fi
+
+if [ -z "${MEERKAT_NODE_ID:-}" ]; then
+  read -rp "Enter MEERKAT_NODE_ID (optional, leave blank to use pubkey): " MEERKAT_NODE_ID
+fi
+
+export MEERKAT_NODE_API_URL="http://${MEERKAT_NODE_IP}:9090"
+
+# Start node API in background so announcer can run in foreground.
+cd "$REPO_ROOT"
+go run ./cmd/noded &
+NODE_PID=$!
+echo "Node API started with PID ${NODE_PID}"
+trap 'kill ${NODE_PID} 2>/dev/null || true' EXIT
 
 # ===== RUN =====
-cd "$REPO_ROOT"
-go run ./cmd/noded
+# Run announcer in foreground (will log to stdout).
+"$SCRIPT_DIR/start-announce.sh"
