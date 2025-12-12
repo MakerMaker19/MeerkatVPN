@@ -474,7 +474,23 @@ func cmdConnect() error {
 	// - pick latest valid token
 	tok, err := ts.LatestValid(poolPub, time.Now())
 	if err != nil {
-		return fmt.Errorf("no valid tokens: %w", err)
+		// Optional: wait for a token to arrive over Nostr before failing.
+		if waitSecs := waitForTokenSeconds(); waitSecs > 0 {
+			log.Printf("No valid tokens; waiting up to %ds for an incoming token...", waitSecs)
+			ctxWait, cancel := context.WithTimeout(ctx, time.Duration(waitSecs)*time.Second)
+			defer cancel()
+			// Block until timeout/cancel; ignore return error and re-check store.
+			_ = client.ListenForTokens(ctxWait)
+
+			ts, err = client.LoadTokenStore()
+			if err != nil {
+				return fmt.Errorf("load token store after wait: %w", err)
+			}
+			tok, err = ts.LatestValid(poolPub, time.Now())
+		}
+		if err != nil {
+			return fmt.Errorf("no valid tokens: %w", err)
+		}
 	}
 
 	// Generate WG keypair (still required for WG backend; node can ignore for OpenVPN)
@@ -598,4 +614,14 @@ func cmdConnect() error {
 		fmt.Println("You can inspect it and later use it with a WireGuard client.")
 		return nil
 	}
+}
+
+// waitForTokenSeconds reads MEERKAT_WAIT_FOR_TOKEN_SECS (int).
+func waitForTokenSeconds() int {
+	if v := os.Getenv("MEERKAT_WAIT_FOR_TOKEN_SECS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return 0
 }
