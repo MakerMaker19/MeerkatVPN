@@ -19,6 +19,7 @@ if [ -z "${MEERKAT_NODE_NSEC:-}" ]; then
   echo "MEERKAT_NODE_NSEC is required. Aborting." >&2
   exit 1
 fi
+export MEERKAT_NODE_NSEC
 
 # ===== PUBLIC API =====
 # If MEERKAT_NODE_IP is not set (env/local), prompt for it interactively.
@@ -30,6 +31,7 @@ if [ -z "${MEERKAT_NODE_IP:-}" ]; then
   echo "MEERKAT_NODE_IP is required (public IP or DNS). Aborting." >&2
   exit 1
 fi
+export MEERKAT_NODE_IP
 
 export MEERKAT_NODE_API_URL="http://${MEERKAT_NODE_IP}:9090"
 
