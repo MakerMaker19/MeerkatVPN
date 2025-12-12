@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip04"
 )
 
 // Client wraps a basic nostr relay set + keys.
@@ -49,14 +50,21 @@ func NewClient(ctx context.Context, priv string, relayURLs []string) (*Client, e
 	return c, nil
 }
 
-// SendDM sends a simple (currently plaintext) kind-4 DM to the target pubkey.
-//
-// NOTE: For now this does NOT do NIP-04/44 encryption. It just signs and
-// publishes the event so we can focus on plumbing. We can harden this later.
+// SendDM sends a kind-4 DM to the target pubkey using NIP-04 encryption.
 func (c *Client) SendDM(ctx context.Context, toPub string, content string, extraTags nostr.Tags) error {
 	pubHex, err := ParsePubKey(toPub)
 	if err != nil {
 		return err
+	}
+
+	shared, err := nip04.ComputeSharedSecret(pubHex, c.PrivKey)
+	if err != nil {
+		return fmt.Errorf("compute shared secret: %w", err)
+	}
+
+	enc, err := nip04.Encrypt(content, shared)
+	if err != nil {
+		return fmt.Errorf("nip04 encrypt: %w", err)
 	}
 
 	tags := nostr.Tags{
@@ -71,20 +79,22 @@ func (c *Client) SendDM(ctx context.Context, toPub string, content string, extra
 		CreatedAt: nostr.Now(),
 		Kind:      nostr.KindEncryptedDirectMessage, // kind 4
 		Tags:      tags,
-		Content:   content, // plaintext for now
+		Content:   enc,
 	}
 
 	if err := ev.Sign(c.PrivKey); err != nil {
 		return err
 	}
 
+	var lastErr error
 	for _, r := range c.Relays {
 		if err := r.Publish(ctx, ev); err != nil {
 			fmt.Println("failed to publish DM:", err)
+			lastErr = err
 		}
 	}
 
-	return nil
+	return lastErr
 }
 
 // Publish broadcasts a generic event to all connected relays.
@@ -98,6 +108,3 @@ func (c *Client) Publish(ctx context.Context, ev nostr.Event) error {
 	}
 	return lastErr
 }
-
-
-

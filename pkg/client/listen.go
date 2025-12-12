@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/nbd-wtf/go-nostr"
+	"github.com/nbd-wtf/go-nostr/nip04"
 
 	"github.com/MakerMaker19/meerkatvpn/pkg/nostrutil"
 	"github.com/MakerMaker19/meerkatvpn/pkg/vpn"
@@ -43,19 +44,25 @@ func clientRelayURLs() []string {
 // ListenForTokens connects to relays and stores subscription tokens found in kind-4 DMs.
 //
 // Env vars:
-//   MEERKAT_CLIENT_NOSTR_PRIVKEY  (hex or nsec)
-//   MEERKAT_CLIENT_RELAYS         (optional, comma-separated)
-//   MEERKAT_CLIENT_POOL_PUBKEY    (optional, hex or npub; if set, only accept tokens from this pubkey)
+//
+//	MEERKAT_CLIENT_NOSTR_PRIVKEY  (hex or nsec)
+//	MEERKAT_CLIENT_RELAYS         (optional, comma-separated)
+//	MEERKAT_CLIENT_POOL_PUBKEY    (optional, hex or npub; if set, only accept tokens from this pubkey)
 func ListenForTokens(ctx context.Context) error {
 	// 1) Nostr privkey: env overrides config.
-	priv := os.Getenv("MEERKAT_CLIENT_NOSTR_PRIVKEY")
-	if priv == "" {
+	privRaw := os.Getenv("MEERKAT_CLIENT_NOSTR_PRIVKEY")
+	if privRaw == "" {
 		if cfg := Config(); cfg != nil && cfg.NostrPrivKey != "" {
-			priv = cfg.NostrPrivKey
+			privRaw = cfg.NostrPrivKey
 		}
 	}
-	if priv == "" {
+	if privRaw == "" {
 		return fmt.Errorf("MEERKAT_CLIENT_NOSTR_PRIVKEY not set and no nostr_privkey in meerkat-client.yaml")
+	}
+
+	parsedPriv, err := nostrutil.ParsePrivKey(privRaw)
+	if err != nil {
+		return fmt.Errorf("parse client privkey: %w", err)
 	}
 
 	relays := clientRelayURLs()
@@ -78,7 +85,7 @@ func ListenForTokens(ctx context.Context) error {
 	}
 
 	// Nostr client using same helper as pool.
-	nc, err := nostrutil.NewClient(ctx, priv, relays)
+	nc, err := nostrutil.NewClient(ctx, parsedPriv.PrivHex, relays)
 	if err != nil {
 		return fmt.Errorf("failed to init nostr client: %w", err)
 	}
@@ -89,7 +96,7 @@ func ListenForTokens(ctx context.Context) error {
 		wg.Add(1)
 		go func(relay *nostr.Relay) {
 			defer wg.Done()
-			if err := listenOnRelay(ctx, relay, nc.PubKey, poolPubHex); err != nil {
+			if err := listenOnRelay(ctx, relay, nc.PubKey, parsedPriv.PrivHex, poolPubHex); err != nil {
 				log.Println("relay listener error:", err)
 			}
 		}(r)
@@ -102,7 +109,7 @@ func ListenForTokens(ctx context.Context) error {
 	return nil
 }
 
-func listenOnRelay(ctx context.Context, relay *nostr.Relay, myPubHex, poolPubHex string) error {
+func listenOnRelay(ctx context.Context, relay *nostr.Relay, myPubHex, myPrivHex, poolPubHex string) error {
 	filter := nostr.Filter{
 		Kinds: []int{nostr.KindEncryptedDirectMessage}, // kind 4
 		Limit: 0,                                       // no explicit limit
@@ -132,17 +139,28 @@ func listenOnRelay(ctx context.Context, relay *nostr.Relay, myPubHex, poolPubHex
 				continue
 			}
 
-			if err := handleIncomingTokenEvent(ev); err != nil {
+			shared, err := nip04.ComputeSharedSecret(ev.PubKey, myPrivHex)
+			if err != nil {
+				log.Println("failed to compute shared secret:", err)
+				continue
+			}
+
+			plaintext, err := nip04.Decrypt(ev.Content, shared)
+			if err != nil {
+				log.Println("failed to decrypt DM:", err)
+				continue
+			}
+
+			if err := handleIncomingTokenEvent(ev.PubKey, plaintext); err != nil {
 				log.Println("failed to handle DM:", err)
 			}
 		}
 	}
 }
 
-func handleIncomingTokenEvent(ev *nostr.Event) error {
-	// For now, we assume plaintext JSON content (no encryption yet).
+func handleIncomingTokenEvent(senderPub string, content string) error {
 	var tok vpn.SubscriptionToken
-	if err := json.Unmarshal([]byte(ev.Content), &tok); err != nil {
+	if err := json.Unmarshal([]byte(content), &tok); err != nil {
 		return fmt.Errorf("invalid token JSON: %w", err)
 	}
 
@@ -156,6 +174,6 @@ func handleIncomingTokenEvent(ev *nostr.Event) error {
 	}
 
 	log.Printf("Stored subscription token %s (expires %d) from %s\n",
-		tok.Payload.TokenID, tok.Payload.ExpiresAt, ev.PubKey)
+		tok.Payload.TokenID, tok.Payload.ExpiresAt, senderPub)
 	return nil
 }
