@@ -60,8 +60,8 @@ if [ -z "${MEERKAT_NODE_BACKENDS:-}" ]; then
   export MEERKAT_NODE_BACKENDS="openvpn"
 fi
 
-# ===== RE-ANNOUNCE EVERY 60s =====
-export MEERKAT_NODE_ANNOUNCE_INTERVAL_SECS="60"
+# ===== RE-ANNOUNCE EVERY 30s =====
+export MEERKAT_NODE_ANNOUNCE_INTERVAL_SECS="30"
 
 cd "$REPO_ROOT"
 go run ./cmd/node-announce

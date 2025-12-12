@@ -7,7 +7,8 @@ import (
 // DefaultAnnouncementTTL is how long we consider a node announcement "fresh".
 // Nostr-based nodes with LastAnnouncedAt+TTL < now are treated as expired
 // for selection (but may still be shown in debug UIs).
-const DefaultAnnouncementTTL = 15 * time.Minute
+// Keep this short so stale nodes age out quickly if announcers stop.
+const DefaultAnnouncementTTL = 2 * time.Minute
 
 // NodeInfo describes everything the client needs to know about a VPN node.
 //
