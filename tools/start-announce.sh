@@ -10,6 +10,8 @@ source "$SCRIPT_DIR/env.local"
 echo "Starting Meerkat Node Announcer (Discovery)..."
 
 # ===== HARD ENFORCED IDENTITY =====
+# Force prompt every run (ignore any pre-set value).
+unset MEERKAT_NODE_NSEC
 if [ -z "${MEERKAT_NODE_NSEC:-}" ]; then
   read -rp "Enter MEERKAT_NODE_NSEC (nsec...): " MEERKAT_NODE_NSEC
 fi
