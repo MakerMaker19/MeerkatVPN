@@ -7,6 +7,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Load secrets (never committed)
 source "$SCRIPT_DIR/env.local"
 
+install_tmux() {
+  if command -v tmux >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ -f /etc/debian_version ]; then
+    sudo apt-get update && sudo apt-get install -y tmux
+  elif [ -f /etc/redhat-release ] || [ -f /etc/centos-release ]; then
+    sudo yum install -y tmux
+  else
+    return 1
+  fi
+}
+
 echo "Starting Meerkat Node API (OpenVPN)..."
 
 # ===== HARD ENFORCED ENV =====
@@ -44,13 +57,27 @@ fi
 
 export MEERKAT_NODE_API_URL="http://${MEERKAT_NODE_IP}:9090"
 
-# Start node API in background so announcer can run in foreground.
-cd "$REPO_ROOT"
-go run ./cmd/noded &
-NODE_PID=$!
-echo "Node API started with PID ${NODE_PID}"
-trap 'kill ${NODE_PID} 2>/dev/null || true' EXIT
-
 # ===== RUN =====
-# Run announcer in foreground (will log to stdout).
-"$SCRIPT_DIR/start-announce.sh"
+cd "$REPO_ROOT"
+
+# Try tmux; auto-install if possible, else fall back to single terminal.
+if ! command -v tmux >/dev/null 2>&1; then
+  install_tmux || true
+fi
+
+if command -v tmux >/dev/null 2>&1; then
+  SESSION="meerkat-node"
+  tmux kill-session -t "$SESSION" 2>/dev/null || true
+  tmux new-session -d -s "$SESSION" -n api "cd \"$REPO_ROOT\" && go run ./cmd/noded"
+  tmux new-window -t "$SESSION" -n announce "cd \"$REPO_ROOT\" && \"$SCRIPT_DIR/start-announce.sh\""
+  echo "Started tmux session '$SESSION' with windows: api, announce"
+  echo "Attach with: tmux attach -t $SESSION"
+  tmux attach -t "$SESSION"
+else
+  echo "tmux not available; starting node API in background and announcer in foreground."
+  go run ./cmd/noded &
+  NODE_PID=$!
+  echo "Node API started with PID ${NODE_PID}"
+  trap 'kill ${NODE_PID} 2>/dev/null || true' EXIT
+  "$SCRIPT_DIR/start-announce.sh"
+fi
