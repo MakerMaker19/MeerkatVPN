@@ -37,6 +37,8 @@ export MEERKAT_CLIENT_POOL_PUBKEY="$MEERKAT_POOL_PUBKEY"
 export MEERKAT_NOSTR_RELAYS="$MEERKAT_NOSTR_RELAYS"
 export MEERKAT_TUNNEL_BACKEND="openvpn"
 export MEERKAT_DEBUG_DISCOVERY="${MEERKAT_DEBUG_DISCOVERY:-1}"
+# Auto-wait for a token if none are present (seconds); can override via env.
+export MEERKAT_WAIT_FOR_TOKEN_SECS="${MEERKAT_WAIT_FOR_TOKEN_SECS:-30}"
 
 # Discovery mode (no hard-coded node)
 unset MEERKAT_NODE_URL

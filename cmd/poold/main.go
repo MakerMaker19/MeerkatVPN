@@ -67,6 +67,8 @@ func main() {
 	// ---- 5. HTTP webhook handler ----
 
 	http.HandleFunc("/ln/webhook", srv.LNWebhookHandler)
+	// Dev/demo invoice endpoint: issues a token immediately and DM's it.
+	http.HandleFunc("/invoice", srv.DevInvoiceHandler)
 
 	log.Printf("poold: listening on %s for LN webhooks...", webhookAddr)
 	if err := http.ListenAndServe(webhookAddr, nil); err != nil {

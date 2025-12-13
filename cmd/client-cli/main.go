@@ -52,6 +52,10 @@ func main() {
 		if err := cmdListNodes(); err != nil {
 			log.Fatal(err)
 		}
+	case "subscribe":
+		if err := cmdSubscribe(); err != nil {
+			log.Fatal(err)
+		}
 	case "connect":
 		if err := cmdConnect(); err != nil {
 			log.Fatal(err)
@@ -73,6 +77,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  meerkat-client receive-tokens   # connect to Nostr relays and store subscription tokens")
 	fmt.Println("  meerkat-client list-tokens      # list stored subscription tokens")
+	fmt.Println("  meerkat-client subscribe        # request a subscription token (dev/demo) and wait for it")
 	fmt.Println("  meerkat-client list-nodes       # list known Meerkat nodes via discovery")
 	fmt.Println("  meerkat-client connect          # use latest valid token to request a session from a node")
 }
@@ -235,6 +240,95 @@ func writeOpenVPNProfile(data []byte) (string, error) {
 	}
 
 	return destPath, nil
+}
+
+// cmdSubscribe calls the pool's dev invoice endpoint and waits for a token DM.
+// Env:
+//
+//	MEERKAT_POOL_API_URL           (e.g., http://localhost:8080)
+//	MEERKAT_SUBSCRIBE_PLAN         (optional; default "monthly")
+//	MEERKAT_WAIT_FOR_TOKEN_SECS    (optional; default used from waitForTokenSeconds)
+func cmdSubscribe() error {
+	ctx := context.Background()
+
+	plan := os.Getenv("MEERKAT_SUBSCRIBE_PLAN")
+	if plan == "" {
+		plan = "monthly"
+	}
+
+	poolURL := os.Getenv("MEERKAT_POOL_API_URL")
+	if poolURL == "" {
+		return fmt.Errorf("MEERKAT_POOL_API_URL not set (e.g., http://localhost:8080)")
+	}
+
+	// Load client privkey (env -> config) and derive pubkey.
+	privRaw := os.Getenv("MEERKAT_CLIENT_NOSTR_PRIVKEY")
+	if privRaw == "" {
+		if cfg := client.Config(); cfg != nil && cfg.NostrPrivKey != "" {
+			privRaw = cfg.NostrPrivKey
+		}
+	}
+	if privRaw == "" {
+		return fmt.Errorf("MEERKAT_CLIENT_NOSTR_PRIVKEY not set and no nostr_privkey in config")
+	}
+
+	parsed, err := nostrutil.ParsePrivKey(privRaw)
+	if err != nil {
+		return fmt.Errorf("parse client privkey: %w", err)
+	}
+
+	body := struct {
+		NostrPubKey string `json:"nostr_pubkey"`
+		Plan        string `json:"plan"`
+	}{
+		NostrPubKey: parsed.PubHex,
+		Plan:        plan,
+	}
+
+	b, err := json.Marshal(body)
+	if err != nil {
+		return fmt.Errorf("marshal request: %w", err)
+	}
+
+	url := strings.TrimRight(poolURL, "/") + "/invoice"
+	log.Printf("Requesting %s plan from pool at %s\n", plan, url)
+
+	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return fmt.Errorf("POST /invoice: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var invoiceResp struct {
+		Status  string `json:"status"`
+		Message string `json:"message"`
+		TokenID string `json:"token_id"`
+		Plan    string `json:"plan"`
+		Invoice string `json:"invoice"`
+	}
+	_ = json.NewDecoder(resp.Body).Decode(&invoiceResp)
+	log.Printf("Invoice response: status=%s message=%s token_id=%s plan=%s\n", invoiceResp.Status, invoiceResp.Message, invoiceResp.TokenID, invoiceResp.Plan)
+
+	waitSecs := waitForTokenSeconds()
+	if waitSecs <= 0 {
+		waitSecs = 30
+	}
+	log.Printf("Waiting up to %ds for subscription token DM...\n", waitSecs)
+
+	ctxWait, cancel := context.WithTimeout(ctx, time.Duration(waitSecs)*time.Second)
+	defer cancel()
+	_ = client.ListenForTokens(ctxWait)
+
+	ts, err := client.LoadTokenStore()
+	if err != nil {
+		return fmt.Errorf("load token store after subscribe: %w", err)
+	}
+	if _, err := ts.LatestValid("", time.Now()); err != nil {
+		return fmt.Errorf("no valid token received (plan=%s): %w", plan, err)
+	}
+
+	fmt.Println("Subscription token received and stored.")
+	return nil
 }
 
 // chooseNodeInteractively lists eligible nodes (backend support, non-expired)
