@@ -48,6 +48,10 @@ func main() {
 		if err := cmdListTokens(); err != nil {
 			log.Fatal(err)
 		}
+	case "check-tokens":
+		if err := cmdCheckTokens(); err != nil {
+			log.Fatal(err)
+		}
 	case "list-nodes":
 		if err := cmdListNodes(); err != nil {
 			log.Fatal(err)
@@ -77,6 +81,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  meerkat-client receive-tokens   # connect to Nostr relays and store subscription tokens")
 	fmt.Println("  meerkat-client list-tokens      # list stored subscription tokens")
+	fmt.Println("  meerkat-client check-tokens     # exit 0 if a valid token exists")
 	fmt.Println("  meerkat-client subscribe        # request a subscription token (dev/demo) and wait for it")
 	fmt.Println("  meerkat-client list-nodes       # list known Meerkat nodes via discovery")
 	fmt.Println("  meerkat-client connect          # use latest valid token to request a session from a node")
@@ -107,6 +112,34 @@ func cmdListTokens() error {
 			t.Payload.IssuerPubKey,
 		)
 	}
+	return nil
+}
+
+// cmdCheckTokens exits successfully if a valid token exists (optionally filtered by pool pubkey).
+func cmdCheckTokens() error {
+	poolRaw := os.Getenv("MEERKAT_CLIENT_POOL_PUBKEY")
+	if poolRaw == "" {
+		if cfg := client.Config(); cfg != nil && cfg.PoolPubKey != "" {
+			poolRaw = cfg.PoolPubKey
+		}
+	}
+	var poolPub string
+	if poolRaw != "" {
+		p, err := nostrutil.ParsePubKey(poolRaw)
+		if err != nil {
+			return fmt.Errorf("parse pool pubkey: %w", err)
+		}
+		poolPub = p
+	}
+
+	ts, err := client.LoadTokenStore()
+	if err != nil {
+		return fmt.Errorf("load token store: %w", err)
+	}
+	if _, err := ts.LatestValid(poolPub, time.Now()); err != nil {
+		return fmt.Errorf("no valid tokens: %w", err)
+	}
+	fmt.Println("Valid token found.")
 	return nil
 }
 

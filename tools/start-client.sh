@@ -43,5 +43,14 @@ export MEERKAT_WAIT_FOR_TOKEN_SECS="${MEERKAT_WAIT_FOR_TOKEN_SECS:-30}"
 # Discovery mode (no hard-coded node)
 unset MEERKAT_NODE_URL
 
+# If no token is present and pool API is configured, auto-run subscribe first.
+if [ -n "${MEERKAT_POOL_API_URL:-}" ]; then
+  # Try to see if we already have a valid token; if not, invoke subscribe.
+  if ! go run ./cmd/client-cli check-tokens >/dev/null 2>&1; then
+    echo "No valid token detected; calling subscribe (pool API: $MEERKAT_POOL_API_URL)..."
+    MEERKAT_SUBSCRIBE_PLAN="${MEERKAT_SUBSCRIBE_PLAN:-monthly}" go run ./cmd/client-cli subscribe
+  fi
+fi
+
 cd "$REPO_ROOT"
 go run ./cmd/client-cli connect
