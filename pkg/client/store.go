@@ -42,10 +42,13 @@ func LoadTokenStore() (*TokenStore, error) {
 	if err := json.Unmarshal(b, &ts); err != nil {
 		return nil, err
 	}
+	ts.CleanExpired(time.Now())
 	return &ts, nil
 }
 
 func (ts *TokenStore) Save() error {
+	ts.CleanExpired(time.Now())
+
 	path, err := tokenStorePath()
 	if err != nil {
 		return err
@@ -66,6 +69,17 @@ func (ts *TokenStore) AddOrUpdate(tok vpn.SubscriptionToken) {
 		}
 	}
 	ts.Tokens = append(ts.Tokens, tok)
+}
+
+// CleanExpired drops expired tokens in-place.
+func (ts *TokenStore) CleanExpired(now time.Time) {
+	out := ts.Tokens[:0]
+	for _, t := range ts.Tokens {
+		if t.Payload.ExpiresAt > now.Unix() {
+			out = append(out, t)
+		}
+	}
+	ts.Tokens = out
 }
 
 // LatestValid returns the latest non-expired token from a given issuer.

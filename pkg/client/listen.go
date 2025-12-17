@@ -110,9 +110,11 @@ func ListenForTokens(ctx context.Context) error {
 }
 
 func listenOnRelay(ctx context.Context, relay *nostr.Relay, myPubHex, myPrivHex, poolPubHex string) error {
+	now := nostr.Now()
 	filter := nostr.Filter{
 		Kinds: []int{nostr.KindEncryptedDirectMessage}, // kind 4
-		Limit: 0,                                       // no explicit limit
+		Since: &now,                                    // only new DMs
+		Limit: 0,
 	}
 
 	sub, err := relay.Subscribe(ctx, nostr.Filters{filter})
