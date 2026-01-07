@@ -1,0 +1,319 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R 9 0 R] /Count 3 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Length 2619 >>
+stream
+BT
+/F1 12 Tf
+50 742 Td
+14 TL
+(MeerkatVPN Whitepaper) Tj
+T*
+(Privacy through community) Tj
+T*
+(Version: December 2025) Tj
+T*
+() Tj
+T*
+(Abstract) Tj
+T*
+(MeerkatVPN is a community-run VPN network built for small, trusted groups via simple) Tj
+T*
+(subscription tokens instead of accounts. Coordination uses Nostr relays, and access is) Tj
+T*
+(enforced by) Tj
+T*
+(nodes that validate pool-signed tokens before provisioning VPN sessions. The current) Tj
+T*
+(working) Tj
+T*
+(build focuses on a single pool, a single node, and a Windows client, with a simulated) Tj
+T*
+(Lightning) Tj
+T*
+(webhook to mint tokens. This document reflects the current working build.) Tj
+T*
+() Tj
+T*
+(Vision) Tj
+T*
+(Privacy through community: lightweight coordination, cryptographic access control, and the) Tj
+T*
+(ability for operators to run their own pool + node without a heavy control plane. Clients) Tj
+T*
+(discover) Tj
+T*
+(nodes over Nostr, present a signed token, and receive an OpenVPN or WireGuard) Tj
+T*
+(configuration.) Tj
+T*
+() Tj
+T*
+(System Overview) Tj
+T*
+(- Control plane: Nostr for messaging and discovery; HTTPS for webhook + node APIs.) Tj
+T*
+(- Data plane: OpenVPN \(default\) or WireGuard for the tunnel itself.) Tj
+T*
+(- Identities: All roles use Nostr keys; pool derives its signing key from the same secret.) Tj
+T*
+(- Footprint: Go binaries only; configuration is via environment variables.) Tj
+T*
+() Tj
+T*
+(Roles and Responsibilities) Tj
+T*
+(Pool \(poold\)) Tj
+T*
+(- Listens on :8080 for Lightning invoice webhooks \(simulated\) and a /invoice dev helper.) Tj
+T*
+(- Issues SubscriptionTokens signed with a btcec key derived from) Tj
+T*
+(MEERKAT_POOL_NOSTR_PRIVKEY.) Tj
+T*
+(- Delivers tokens to clients via Nostr DMs. Pricing and relays come from environment) Tj
+T*
+(variables.) Tj
+T*
+(- Protects webhook with X-Meerkat-Secret; warns if unset.) Tj
+T*
+() Tj
+T*
+(Node \(noded\)) Tj
+T*
+(- Exposes /session/create on :9090. Accepts tokens, verifies signature, expiry, and) Tj
+T*
+(optional issuer) Tj
+T*
+(  allowlist \(MEERKAT_NODE_ALLOWED_POOL_PUBKEY\).) Tj
+T*
+(- Backend selection: defaults to OpenVPN unless backend="wireguard" is provided.) Tj
+T*
+(- OpenVPN path: reads a base profile from MEERKAT_NODE_OVPN_PROFILE_PATH \(default) Tj
+T*
+(  /etc/openvpn/meerkat-client.ovpn\), prepends session metadata, and returns the full) Tj
+T*
+(profile.) Tj
+T*
+(- WireGuard path: if wg tools are available, allocates a peer IP and applies it; otherwise) Tj
+T*
+(falls back) Tj
+T*
+(  to 10.8.0.2/32. Returns server pubkey, endpoint, allowed IPs \(0.0.0.0/0, ::/0\), and DNS.) Tj
+T*
+() Tj
+T*
+(Node Announcer \(node-announce\)) Tj
+T*
+ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 2695 >>
+stream
+BT
+/F1 12 Tf
+50 742 Td
+14 TL
+(- Publishes node metadata \(API URL, region/country/city, backends, version, weight\) to) Tj
+T*
+(Nostr relays) Tj
+T*
+(  using kind 38383 events. Accepts npub/hex pool pubkeys and nsec private keys.) Tj
+T*
+(- Relays default to damus + primal; override via MEERKAT_NOSTR_RELAYS.) Tj
+T*
+(- Interval configurable with MEERKAT_NODE_ANNOUNCE_INTERVAL_SECS; schema defaults to 1.) Tj
+T*
+() Tj
+T*
+(Client \(client-cli\)) Tj
+T*
+(- Receives tokens via Nostr DMs \(receive-tokens\), stores them locally, and lists them on) Tj
+T*
+(demand.) Tj
+T*
+(- Discovers nodes from announcements \(watch-nodes / list-nodes\) and selects one when) Tj
+T*
+(connecting.) Tj
+T*
+(- Calls /session/create, then writes meerkat.ovpn \(OpenVPN\) or meerkat-wg.conf \(WireGuard\)) Tj
+T*
+(for) Tj
+T*
+(  the user to import. Default backend is OpenVPN.) Tj
+T*
+() Tj
+T*
+(End-to-End Flow \(current build\)) Tj
+T*
+(1\) Operator runs poold with Nostr privkey, webhook secret, pricing, and relays configured.) Tj
+T*
+(2\) Client runs receive-tokens with MEERKAT_CLIENT_NOSTR_PRIVKEY and pool pubkey set.) Tj
+T*
+(3\) Hitting /invoice \(or a Lightning webhook\) causes poold to mint and DM a) Tj
+T*
+(SubscriptionToken.) Tj
+T*
+(4\) Node runs node-announce to publish its API URL and metadata to relays.) Tj
+T*
+(5\) Client discovers the node, picks the latest valid token, and calls /session/create.) Tj
+T*
+(6\) Node validates the token, logs session metadata, and returns an OpenVPN or WireGuard) Tj
+T*
+(config.) Tj
+T*
+(7\) User imports the config into their VPN client; traffic egresses via the node VPS.) Tj
+T*
+() Tj
+T*
+(Security Posture \(MVP\)) Tj
+T*
+(- Tokens: Signed by the pool; include issuer pubkey, user pubkey, plan, and expiry. No) Tj
+T*
+(revocation) Tj
+T*
+(  list yet; tokens remain valid until expiry.) Tj
+T*
+(- Transport: VPN over OpenVPN or WireGuard; control-plane over HTTPS + Nostr. No PII) Tj
+T*
+(stored) Tj
+T*
+(  beyond token metadata.) Tj
+T*
+(- Webhook: Protected by shared secret header X-Meerkat-Secret. Lightning settlement is) Tj
+T*
+(simulated.) Tj
+T*
+(- Logging: Structured session logs \(session_id, token_id, user_pubkey, remote IP\). No) Tj
+T*
+(billing or) Tj
+T*
+(  usage counters in this build.) Tj
+T*
+() Tj
+T*
+(Defaults and Footprint) Tj
+T*
+(- Binaries: cmd/client-cli, cmd/poold, cmd/noded, cmd/node-announce \(Go 1.21+\).) Tj
+T*
+(- Defaults: pool webhook :8080; node API :9090; WireGuard server 10.8.0.1/24 on port) Tj
+T*
+(51820;) Tj
+T*
+(  relays wss://relay.damus.io,wss://relay.primal.net.) Tj
+T*
+(- Configuration: environment variables only. Artifacts: OpenVPN/WireGuard profiles and) Tj
+T*
+(client) Tj
+T*
+(  token store on disk.) Tj
+T*
+() Tj
+T*
+(Known Limitations) Tj
+T*
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Length 1813 >>
+stream
+BT
+/F1 12 Tf
+50 742 Td
+14 TL
+(- Single pool and single-node focus; no roaming or multi-pool federation yet.) Tj
+T*
+(- Lightning integration is mocked via /invoice; no settlement proofs or refunds.) Tj
+T*
+(- No token revocation or spend-once enforcement; theft is mitigated only by expiry.) Tj
+T*
+(- WireGuard automation requires wg + privileges; otherwise falls back to static IP) Tj
+T*
+(assignment.) Tj
+T*
+(- Relay dependence: service quality follows Nostr relay availability; no gossip fallback.) Tj
+T*
+() Tj
+T*
+(Roadmap \(directional\)) Tj
+T*
+(1\) Real Lightning adapter with invoice lookup, settlement proofs, and plan enforcement.) Tj
+T*
+(2\) Token lifecycle: revocation, spend-once semantics, and per-session accounting.) Tj
+T*
+(3\) Smarter client selection: latency/weight/region-aware, plus multiple pools.) Tj
+T*
+(4\) Trust and health: signed node heartbeats, pruning stale announcements, local registry) Tj
+T*
+(cache.) Tj
+T*
+(5\) UX: GUI client, native installers, and safer key handling.) Tj
+T*
+() Tj
+T*
+(References) Tj
+T*
+(- Nostr: NIP-01 \(event formats\), NIP-04 \(encrypted DMs\), NIP-28 \(public chat\); relay) Tj
+T*
+(operator) Tj
+T*
+(  guides for availability/rate limits.) Tj
+T*
+(- WireGuard: Original whitepaper \(Jason A. Donenfeld\) and wg\(8\)/wg-quick\(8\) man pages for) Tj
+T*
+(key) Tj
+T*
+(  exchange and interface configuration.) Tj
+T*
+(- OpenVPN: Official reference manual for client/server options and .ovpn profile format.) Tj
+T*
+(- Lightning: BOLT specs?BOLT 1, 2, 4, 7, 11 \(invoices\) for webhook/settlement design.) Tj
+T*
+(- Cryptography: btcec/secp256k1 \(Go btcd/btcec\) for SubscriptionToken signatures and) Tj
+T*
+(verification.) Tj
+T*
+(- Service discovery: signed announcements/heartbeats \(kind 38383\) for authenticity and) Tj
+T*
+(pruning of) Tj
+T*
+(  stale nodes.) Tj
+T*
+ET
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 8 0 R >>
+endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000127 00000 n 
+0000000197 00000 n 
+0000002867 00000 n 
+0000002993 00000 n 
+0000005739 00000 n 
+0000005865 00000 n 
+0000007729 00000 n 
+trailer << /Size 10 /Root 1 0 R >>
+startxref
+7855
+%%EOF
